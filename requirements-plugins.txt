@@ -72,7 +72,7 @@ cffi==1.17.1 ; platform_python_implementation == 'PyPy' \
     --hash=sha256:f7f5baafcc48261359e14bcd6d9bff6d4b28d9103847c9e136694cb0501aef87 \
     --hash=sha256:fc48c783f9c87e60831201f2cce7f3b2e4846bf4d8728eabe54d60700b318a0b
     # via zstandard
-charset-normalizer==3.4.2 \
+charset-normalizer>=3.4.2,<3.5 \
     --hash=sha256:005fa3432484527f9732ebd315da8da8001593e2cf46a3d817669f062c3d9ed4 \
     --hash=sha256:046595208aae0120559a67693ecc65dd75d46f7bf687f159127046628178dc45 \
     --hash=sha256:0c29de6a1a95f24b9a1aa7aefd27d2487263f00dfd55a77719b530788f75cff7 \
@@ -166,7 +166,7 @@ charset-normalizer==3.4.2 \
     --hash=sha256:fcbe676a55d7445b22c10967bceaaf0ee69407fbe0ece4d032b6eb8d4565982a \
     --hash=sha256:fdb20a30fe1175ecabed17cbf7812f7b804b8a315a25f24678bcdf120a90077f
     # via picard (pyproject.toml)
-discid==1.2.0 \
+discid>=1.3.0 \
     --hash=sha256:cd9630bc53f5566df92819641040226e290b2047573f2c74a6e92b8eed9e86b9
     # via picard (pyproject.toml)
 markdown==3.8.2 \
