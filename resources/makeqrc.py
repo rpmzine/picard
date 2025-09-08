@@ -3,12 +3,11 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2013-2014, 2018, 2020 Laurent Monin
+# Copyright (C) 2013-2014, 2018 Laurent Monin
 # Copyright (C) 2014 Sophist-UK
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2017 Ville Skyttä
-# Copyright (C) 2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +22,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-
 
 """Build a Qt resources file with all png images found under images/
 It will update qrc file only if images newer than it are found
@@ -49,7 +47,7 @@ def natsort_key(s):
 
 def find_files(topdir, directory, patterns):
     tdir = os.path.join(topdir, directory)
-    for root, _dirs, files in os.walk(tdir):
+    for root, dirs, files in os.walk(tdir):
         for basename in files:
             for pattern in patterns:
                 if fnmatch.fnmatch(basename, pattern):

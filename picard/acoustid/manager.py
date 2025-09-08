@@ -5,8 +5,8 @@
 # Copyright (C) 2011 Lukáš Lalinský
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2018 Vishal Choudhary
-# Copyright (C) 2018, 2020-2021, 2023-2024 Laurent Monin
-# Copyright (C) 2020, 2022-2023 Philipp Wolfer
+# Copyright (C) 2018, 2020-2021 Laurent Monin
+# Copyright (C) 2020, 2022 Philipp Wolfer
 # Copyright (C) 2022 cybersphinx
 #
 # This program is free software; you can redistribute it and/or
@@ -26,13 +26,10 @@
 
 from functools import partial
 
-from PyQt6 import QtCore
+from PyQt5 import QtCore
 
 from picard import log
-from picard.i18n import N_
 from picard.util import load_json
-
-from picard.ui.enums import MainAction
 
 
 # Maximum difference between file duration and MB recording length.
@@ -41,7 +38,8 @@ from picard.ui.enums import MainAction
 FINGERPRINT_MAX_ALLOWED_LENGTH_DIFF_MS = 30000
 
 
-class Submission:
+class Submission(object):
+
     def __init__(self, fingerprint, duration, recordingid=None, metadata=None):
         self.fingerprint = fingerprint
         self.duration = duration
@@ -67,10 +65,7 @@ class Submission:
 
     @property
     def valid_duration(self):
-        return (
-            self.metadata is None
-            or abs(self.duration * 1000 - self.metadata.length) <= FINGERPRINT_MAX_ALLOWED_LENGTH_DIFF_MS
-        )
+        return self.metadata is None or abs(self.duration * 1000 - self.metadata.length) <= FINGERPRINT_MAX_ALLOWED_LENGTH_DIFF_MS
 
     @property
     def is_submitted(self):
@@ -103,7 +98,8 @@ class Submission:
         return args
 
 
-class AcoustIDManager:
+class AcoustIDManager(QtCore.QObject):
+
     # AcoustID has a post limit of around 1 MB.
     MAX_PAYLOAD = 1000000
     # Limit each submission to N attempts
@@ -113,7 +109,7 @@ class AcoustIDManager:
     BATCH_SIZE_REDUCTION_FACTOR = 0.7
 
     def __init__(self, acoustid_api):
-        self.tagger = QtCore.QCoreApplication.instance()
+        super().__init__()
         self._submissions = {}
         self._acoustid_api = acoustid_api
 
@@ -122,11 +118,7 @@ class AcoustIDManager:
             return
         metadata = file.metadata
         self._submissions[file] = Submission(
-            file.acoustid_fingerprint,
-            file.acoustid_length,
-            recordingid,
-            metadata,
-        )
+            file.acoustid_fingerprint, file.acoustid_length, recordingid, metadata)
         self._check_unsubmitted()
 
     def update(self, file, recordingid):
@@ -157,7 +149,7 @@ class AcoustIDManager:
 
     def _check_unsubmitted(self):
         enabled = next(self._unsubmitted(), None) is not None
-        self.tagger.window.enable_action(MainAction.SUBMIT_ACOUSTID, enabled)
+        self.tagger.window.enable_submit(enabled)
 
     def submit(self):
         self.max_batch_size = self.MAX_PAYLOAD
@@ -194,10 +186,7 @@ class AcoustIDManager:
                 log_msg = N_("AcoustID submission finished successfully")
             log.debug(log_msg)
             self.tagger.window.set_statusbar_message(
-                log_msg,
-                echo=None,
-                timeout=3000,
-            )
+                log_msg, echo=None, timeout=3000)
             self._check_unsubmitted()
             return
 
@@ -210,23 +199,21 @@ class AcoustIDManager:
                 log_msg = N_("AcoustID submission failed permanently, probably too many retries")
             log.error(log_msg)
             self.tagger.window.set_statusbar_message(
-                log_msg,
-                echo=None,
-                timeout=3000,
-            )
+                log_msg, echo=None, timeout=3000)
             self._check_unsubmitted()
             return
 
-        log.debug("AcoustID: submitting batch of %d fingerprints (%d remaining)…", len(batch), len(submissions))
+        log.debug("AcoustID: submitting batch of %d fingerprints (%d remaining)…",
+            len(batch), len(submissions))
         self.tagger.window.set_statusbar_message(
             N_("Submitting AcoustIDs …"),
-            echo=None,
+            echo=None
         )
         if not errors:
             errors = []
         self._acoustid_api.submit_acoustid_fingerprints(
             [submission for file_, submission in batch],
-            partial(self._batch_submit_finished, submissions, batch, errors),
+            partial(self._batch_submit_finished, submissions, batch, errors)
         )
 
     def _batch_submit_finished(self, submissions, batch, previous_errors, document, http, error):
@@ -237,7 +224,7 @@ class AcoustIDManager:
             response_code = self._acoustid_api.webservice.http_response_code(http)
             if response_code == 413:
                 self.max_batch_size = int(self.max_batch_size * self.BATCH_SIZE_REDUCTION_FACTOR)
-                log.warning("AcoustID: payload too large, batch size reduced to %d", self.max_batch_size)
+                log.warn("AcoustID: payload too large, batch size reduced to %d", self.max_batch_size)
             else:
                 try:
                     errordoc = load_json(document)
@@ -246,17 +233,13 @@ class AcoustIDManager:
                     message = ""
                 mparms = {
                     'error': http.errorString(),
-                    'message': message,
+                    'message': message
                 }
                 previous_errors.append(mparms)
                 log_msg = N_("AcoustID submission failed with error '%(error)s': %(message)s")
                 log.error(log_msg, mparms)
                 self.tagger.window.set_statusbar_message(
-                    log_msg,
-                    mparms,
-                    echo=None,
-                    timeout=3000,
-                )
+                    log_msg, mparms, echo=None, timeout=3000)
         else:
             log.debug("AcoustID: %d fingerprints successfully submitted", len(batch))
             for file, submission in batch:

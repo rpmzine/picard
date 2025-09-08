@@ -2,8 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2020, 2022 Philipp Wolfer
-# Copyright (C) 2020-2022 Laurent Monin
+# Copyright (C) 2020 Philipp Wolfer
+# Copyright (C) 2020-2021 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -20,7 +20,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from PyQt6.QtGui import QColor
+from PyQt5.QtGui import QColor
 
 from test.picardtestcase import PicardTestCase
 
@@ -41,7 +41,7 @@ settings = {
     'interface_colors_dark': {
         'unknowncolor': '#deadbe',
         'entity_error': '#abcdef',
-    },
+    }
 }
 
 
@@ -64,10 +64,7 @@ class InterfaceColorsTest(PicardTestCase):
             self.assertTrue(interface_colors.save_to_config())
             self.assertEqual(config.setting[key]['entity_error'], '#000000')
             self.assertNotIn('unknowncolor', config.setting[key])
-            self.assertEqual(
-                interface_colors.get_color_description('entity_error'),
-                default_colors['entity_error'].description,
-            )
+            self.assertEqual(interface_colors.get_color_description('entity_error'), default_colors['entity_error'].description)
             self.assertEqual(interface_colors.get_qcolor('entity_error'), QColor('#000000'))
 
     def test_interface_colors_default(self):

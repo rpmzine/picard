@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2016 Rahul Raturi
+# Copyright (C) 2018-2022 Laurent Monin
 # Copyright (C) 2018-2023 Philipp Wolfer
-# Copyright (C) 2018-2024 Laurent Monin
 # Copyright (C) 2020 Ray Bouchard
 #
 # This program is free software; you can redistribute it and/or
@@ -24,7 +24,7 @@
 
 from collections import namedtuple
 
-from PyQt6 import (
+from PyQt5 import (
     QtCore,
     QtGui,
     QtNetwork,
@@ -32,8 +32,6 @@ from PyQt6 import (
 )
 
 from picard.config import get_config
-from picard.const import PICARD_URLS
-from picard.i18n import gettext as _
 from picard.util import (
     icontheme,
     restore_method,
@@ -43,26 +41,11 @@ from picard.ui.tablebaseddialog import TableBasedDialog
 from picard.ui.util import StandardButton
 
 
-class SearchQLineEdit(QtWidgets.QLineEdit):
-    def __init__(self, searchbox, parent=None):
-        super().__init__(parent)
-        self.searchbox = searchbox
-
-    def focusInEvent(self, event):
-        # When focus is on search edit box, need to disable
-        # dialog's accept button. This would avoid closing of dialog when user
-        # hits enter.
-        parent = self.searchbox.parent()
-        if parent.table:
-            parent.table.clearSelection()
-        parent.accept_button.setEnabled(False)
-        super().focusInEvent(event)
-
-
 class SearchBox(QtWidgets.QWidget):
-    def __init__(self, force_advanced_search=None, parent=None):
-        super().__init__(parent=parent)
-        self.search_action = QtGui.QAction(icontheme.lookup('system-search'), _("Search"), self)
+
+    def __init__(self, parent, force_advanced_search=None):
+        super().__init__(parent)
+        self.search_action = QtWidgets.QAction(icontheme.lookup('system-search'), _("Search"), self)
         self.search_action.setEnabled(False)
         self.search_action.triggered.connect(self.search)
         if force_advanced_search is None:
@@ -74,17 +57,27 @@ class SearchBox(QtWidgets.QWidget):
             self.use_advanced_search = force_advanced_search
         self.setupUi()
 
+    def focus_in_event(self, event):
+        # When focus is on search edit box, need to disable
+        # dialog's accept button. This would avoid closing of dialog when user
+        # hits enter.
+        parent = self.parent()
+        if parent.table:
+            parent.table.clearSelection()
+        parent.accept_button.setEnabled(False)
+
     def setupUi(self):
         self.layout = QtWidgets.QVBoxLayout(self)
         self.search_row_widget = QtWidgets.QWidget(self)
         self.search_row_layout = QtWidgets.QHBoxLayout(self.search_row_widget)
         self.search_row_layout.setContentsMargins(1, 1, 1, 1)
         self.search_row_layout.setSpacing(1)
-        self.search_edit = SearchQLineEdit(self, parent=self.search_row_widget)
+        self.search_edit = QtWidgets.QLineEdit(self.search_row_widget)
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.returnPressed.connect(self.trigger_search_action)
         self.search_edit.textChanged.connect(self.enable_search)
         self.search_edit.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
+        self.search_edit.focusInEvent = self.focus_in_event
         self.search_row_layout.addWidget(self.search_edit)
         self.search_button = QtWidgets.QToolButton(self.search_row_widget)
         self.search_button.setAutoRaise(True)
@@ -105,9 +98,9 @@ class SearchBox(QtWidgets.QWidget):
         self.adv_opt_row_layout.addWidget(self.use_adv_search_syntax)
         self.adv_syntax_help = QtWidgets.QLabel(self.adv_opt_row_widget)
         self.adv_syntax_help.setOpenExternalLinks(True)
-        self.adv_syntax_help.setText(
-            _("&#160;(<a href='{url}'>Syntax Help</a>)").format(url=PICARD_URLS['mb_doc_search_syntax'])
-        )
+        self.adv_syntax_help.setText(_(
+            "&#160;(<a href='https://musicbrainz.org/doc/Indexed_Search_Syntax'>"
+            "Syntax Help</a>)"))
         self.adv_opt_row_layout.addWidget(self.adv_syntax_help)
         self.adv_opt_row_widget.setLayout(self.adv_opt_row_layout)
         self.layout.addWidget(self.adv_opt_row_widget)
@@ -152,9 +145,7 @@ Retry = namedtuple('Retry', ['function', 'query'])
 class SearchDialog(TableBasedDialog):
     accept_button_title = ""
 
-    def __init__(
-        self, parent, window_title, accept_button_title, show_search=True, search_type=None, force_advanced_search=None
-    ):
+    def __init__(self, parent, accept_button_title, show_search=True, search_type=None, force_advanced_search=None):
         self.accept_button_title = accept_button_title
         self.search_results = []
         self.show_search = show_search
@@ -162,7 +153,6 @@ class SearchDialog(TableBasedDialog):
         self.force_advanced_search = force_advanced_search
         self.search_box = None
         super().__init__(parent)
-        self.setWindowTitle(_(window_title))
 
     @property
     def use_advanced_search(self):
@@ -174,11 +164,14 @@ class SearchDialog(TableBasedDialog):
             config = get_config()
             return config.setting['use_adv_search_syntax']
 
+    def get_value_for_row_id(self, row, value):
+        return row
+
     def setupUi(self):
         self.verticalLayout = QtWidgets.QVBoxLayout(self)
         self.verticalLayout.setObjectName('vertical_layout')
         if self.show_search:
-            self.search_box = SearchBox(force_advanced_search=self.force_advanced_search, parent=self)
+            self.search_box = SearchBox(self, force_advanced_search=self.force_advanced_search)
             self.search_box.setObjectName('search_box')
             self.verticalLayout.addWidget(self.search_box)
         self.center_widget = QtWidgets.QWidget(self)
@@ -190,15 +183,22 @@ class SearchDialog(TableBasedDialog):
         self.verticalLayout.addWidget(self.center_widget)
         self.buttonBox = QtWidgets.QDialogButtonBox(self)
         if self.show_search and self.search_type:
-            self.search_browser_button = QtWidgets.QPushButton(_("Search in browser"), self.buttonBox)
-            self.buttonBox.addButton(self.search_browser_button, QtWidgets.QDialogButtonBox.ButtonRole.ActionRole)
+            self.search_browser_button = QtWidgets.QPushButton(
+                _("Search in browser"), self.buttonBox)
+            self.buttonBox.addButton(
+                self.search_browser_button,
+                QtWidgets.QDialogButtonBox.ButtonRole.ActionRole)
             self.search_browser_button.clicked.connect(self.search_browser)
-        self.accept_button = QtWidgets.QPushButton(_(self.accept_button_title), self.buttonBox)
+        self.accept_button = QtWidgets.QPushButton(
+            self.accept_button_title,
+            self.buttonBox)
         self.accept_button.setEnabled(False)
-        self.buttonBox.addButton(self.accept_button, QtWidgets.QDialogButtonBox.ButtonRole.AcceptRole)
         self.buttonBox.addButton(
-            StandardButton(StandardButton.CANCEL), QtWidgets.QDialogButtonBox.ButtonRole.RejectRole
-        )
+            self.accept_button,
+            QtWidgets.QDialogButtonBox.ButtonRole.AcceptRole)
+        self.buttonBox.addButton(
+            StandardButton(StandardButton.CANCEL),
+            QtWidgets.QDialogButtonBox.ButtonRole.RejectRole)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
         self.verticalLayout.addWidget(self.buttonBox)
@@ -240,9 +240,7 @@ class SearchDialog(TableBasedDialog):
             retry_layout = QtWidgets.QHBoxLayout(retry_widget)
             retry_button = QtWidgets.QPushButton(_("Retry"), error_widget)
             retry_button.clicked.connect(self.retry)
-            retry_button.setSizePolicy(
-                QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Fixed)
-            )
+            retry_button.setSizePolicy(QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Fixed))
             retry_layout.addWidget(retry_button)
             retry_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter | QtCore.Qt.AlignmentFlag.AlignTop)
             retry_widget.setLayout(retry_layout)
@@ -255,15 +253,11 @@ class SearchDialog(TableBasedDialog):
             'url': reply.request().url().toString(QtCore.QUrl.UrlFormattingOption.RemoveUserInfo),
             'error': reply.errorString(),
             'qtcode': error,
-            'statuscode': reply.attribute(QtNetwork.QNetworkRequest.Attribute.HttpStatusCodeAttribute),
+            'statuscode': reply.attribute(
+                QtNetwork.QNetworkRequest.Attribute.HttpStatusCodeAttribute)
         }
-        error_msg = (
-            _(
-                "<strong>Following error occurred while fetching results:<br><br></strong>"
-                "Network request error for %(url)s:<br>%(error)s (QT code %(qtcode)d, HTTP code %(statuscode)r)<br>"
-            )
-            % params
-        )
+        error_msg = _("<strong>Following error occurred while fetching results:<br><br></strong>"
+                      "Network request error for %(url)s:<br>%(error)s (QT code %(qtcode)d, HTTP code %(statuscode)r)<br>") % params
         self.show_error(error_msg, show_retry_button=True)
 
     def no_results_found(self):
@@ -271,7 +265,8 @@ class SearchDialog(TableBasedDialog):
         self.show_error(error_msg)
 
     def search_browser(self):
-        self.tagger.search(self.search_box.query, self.search_type, adv=self.use_advanced_search, force_browser=True)
+        self.tagger.search(self.search_box.query, self.search_type,
+                           adv=self.use_advanced_search, force_browser=True)
 
     @restore_method
     def restore_state(self):

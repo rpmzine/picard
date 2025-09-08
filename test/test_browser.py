@@ -23,7 +23,6 @@
 
 
 from unittest.mock import (
-    MagicMock,
     Mock,
     patch,
 )
@@ -34,8 +33,8 @@ from urllib.parse import (
 
 from test.picardtestcase import PicardTestCase
 
+from picard.browser.browser import clean_header
 from picard.browser.filelookup import FileLookup
-from picard.browser.server import clean_header
 from picard.util import webbrowser2
 
 
@@ -45,6 +44,7 @@ LOCAL_PORT = "8000"
 
 
 class BrowserLookupTest(PicardTestCase):
+
     def setUp(self):
         super().setUp()
         self.lookup = FileLookup(None, SERVER, PORT, LOCAL_PORT)
@@ -117,30 +117,29 @@ class BrowserLookupTest(PicardTestCase):
     @patch.object(webbrowser2, 'open')
     def test_mbid_lookup_matched_callback(self, mock_open):
         mock_matched_callback = Mock()
-        result = self.lookup.mbid_lookup(
-            'area:F03D09B3-39DC-4083-AFD6-159E3F0D462F', mbid_matched_callback=mock_matched_callback
-        )
+        result = self.lookup.mbid_lookup('area:F03D09B3-39DC-4083-AFD6-159E3F0D462F', mbid_matched_callback=mock_matched_callback)
         self.assertTrue(result)
         mock_open.assert_called_once()
         url = mock_open.call_args[0][0]
         self.assert_mb_entity_url_matches(url, 'area', 'f03d09b3-39dc-4083-afd6-159e3f0d462f')
 
-    def test_mbid_lookup_release(self):
-        self.tagger.load_album = MagicMock()
+    @patch('PyQt5.QtCore.QObject.tagger')
+    def test_mbid_lookup_release(self, mock_tagger):
         url = 'https://musicbrainz.org/release/60dbf818-3058-41b9-bb53-25dbdb9d9bad'
         result = self.lookup.mbid_lookup(url)
         self.assertTrue(result)
-        self.tagger.load_album.assert_called_once_with('60dbf818-3058-41b9-bb53-25dbdb9d9bad')
+        mock_tagger.load_album.assert_called_once_with('60dbf818-3058-41b9-bb53-25dbdb9d9bad')
 
-    def test_mbid_lookup_recording(self):
-        self.tagger.load_nat = MagicMock()
+    @patch('PyQt5.QtCore.QObject.tagger')
+    def test_mbid_lookup_recording(self, mock_tagger):
         url = 'https://musicbrainz.org/recording/511f3a33-ded8-4dc7-92d2-b913ec420dfc'
         result = self.lookup.mbid_lookup(url)
         self.assertTrue(result)
-        self.tagger.load_nat.assert_called_once_with('511f3a33-ded8-4dc7-92d2-b913ec420dfc')
+        mock_tagger.load_nat.assert_called_once_with('511f3a33-ded8-4dc7-92d2-b913ec420dfc')
 
+    @patch('PyQt5.QtCore.QObject.tagger')
     @patch('picard.browser.filelookup.AlbumSearchDialog')
-    def test_mbid_lookup_release_group(self, mock_dialog):
+    def test_mbid_lookup_release_group(self, mock_dialog, mock_tagger):
         url = 'https://musicbrainz.org/release-group/168615bf-f841-49f7-ac98-36a4eb25479c'
         result = self.lookup.mbid_lookup(url)
         self.assertTrue(result)
@@ -255,6 +254,7 @@ class BrowserLookupTest(PicardTestCase):
 
 
 class BrowserIntegrationTest(PicardTestCase):
+
     def test_clean_header(self):
         bad_header = "foo\nSome-Header: bar"
         self.assertEqual("fooSome-Header bar", clean_header(bad_header))

@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006 Lukáš Lalinský
-# Copyright (C) 2019-2021, 2025 Philipp Wolfer
-# Copyright (C) 2021, 2023-2024 Laurent Monin
+# Copyright (C) 2019-2021 Philipp Wolfer
+# Copyright (C) 2021 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -21,18 +21,24 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from picard.config import get_config
-from picard.extension_points.options_pages import register_options_page
+from picard.config import (
+    BoolOption,
+    TextOption,
+    get_config,
+)
 from picard.formats.wav import WAVFile
-from picard.i18n import N_
 
-from picard.ui.forms.ui_options_tags_compatibility_wave import (
+from picard.ui.options import (
+    OptionsPage,
+    register_options_page,
+)
+from picard.ui.ui_options_tags_compatibility_wave import (
     Ui_TagsCompatibilityOptionsPage,
 )
-from picard.ui.options import OptionsPage
 
 
 class TagsCompatibilityWaveOptionsPage(OptionsPage):
+
     NAME = 'tags_compatibility_wave'
     TITLE = N_("WAVE")
     PARENT = 'tags'
@@ -40,14 +46,14 @@ class TagsCompatibilityWaveOptionsPage(OptionsPage):
     ACTIVE = True
     HELP_URL = "/config/options_tags_compatibility_wave.html"
 
-    OPTIONS = (
-        ('write_wave_riff_info', ['write_wave_riff_info']),
-        ('remove_wave_riff_info', ['remove_wave_riff_info']),
-        ('wave_riff_info_encoding', ['wave_riff_info_enc_cp1252', 'wave_riff_info_enc_utf8']),
-    )
+    options = [
+        BoolOption('setting', 'write_wave_riff_info', True),
+        BoolOption('setting', 'remove_wave_riff_info', False),
+        TextOption('setting', 'wave_riff_info_encoding', 'windows-1252'),
+    ]
 
     def __init__(self, parent=None):
-        super().__init__(parent=parent)
+        super().__init__(parent)
         self.ui = Ui_TagsCompatibilityOptionsPage()
         self.ui.setupUi(self)
 

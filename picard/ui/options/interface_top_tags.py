@@ -2,8 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2019-2021, 2025 Philipp Wolfer
-# Copyright (C) 2020-2021, 2023-2024 Laurent Monin
+# Copyright (C) 2019-2021 Philipp Wolfer
+# Copyright (C) 2020-2021 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -20,17 +20,22 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from picard.config import get_config
-from picard.extension_points.options_pages import register_options_page
-from picard.i18n import N_
+from picard.config import (
+    ListOption,
+    get_config,
+)
 
-from picard.ui.forms.ui_options_interface_top_tags import (
+from picard.ui.options import (
+    OptionsPage,
+    register_options_page,
+)
+from picard.ui.ui_options_interface_top_tags import (
     Ui_InterfaceTopTagsOptionsPage,
 )
-from picard.ui.options import OptionsPage
 
 
 class InterfaceTopTagsOptionsPage(OptionsPage):
+
     NAME = 'interface_top_tags'
     TITLE = N_("Top Tags")
     PARENT = 'interface'
@@ -38,10 +43,19 @@ class InterfaceTopTagsOptionsPage(OptionsPage):
     ACTIVE = True
     HELP_URL = "/config/options_interface_top_tags.html"
 
-    OPTIONS = (('metadatabox_top_tags', ['top_tags_groupBox']),)
+    options = [
+        ListOption('setting', 'metadatabox_top_tags', [
+            'title',
+            'artist',
+            'album',
+            'tracknumber',
+            '~length',
+            'date',
+        ]),
+    ]
 
     def __init__(self, parent=None):
-        super().__init__(parent=parent)
+        super().__init__(parent)
         self.ui = Ui_InterfaceTopTagsOptionsPage()
         self.ui.setupUi(self)
 

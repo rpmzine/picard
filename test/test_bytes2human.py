@@ -2,11 +2,11 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2013, 2019-2023 Laurent Monin
+# Copyright (C) 2013, 2019-2021 Laurent Monin
 # Copyright (C) 2014, 2017 Sophist-UK
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2018 Wieland Hoffmann
-# Copyright (C) 2018-2020, 2022 Philipp Wolfer
+# Copyright (C) 2018-2020 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -81,22 +81,15 @@ class Testbytes2human(PicardTestCase):
         values = [0, 1]
         for n in (1000, 1024):
             p = 1
-            for _i in range(0, 6):
+            for e in range(0, 6):
                 p *= n
                 for x in (0.1, 0.5, 0.99, 0.9999, 1, 1.5):
                     values.append(int(p * x))
         list = []
         for x in sorted(values):
-            list.append(
-                ";".join(
-                    [
-                        str(x),
-                        bytes2human.decimal(x),
-                        bytes2human.binary(x),
-                        bytes2human.short_string(x, 1024, 2),
-                    ]
-                )
-            )
+            list.append(";".join([str(x), bytes2human.decimal(x),
+                                  bytes2human.binary(x),
+                                  bytes2human.short_string(x, 1024, 2)]))
         return list
 
     @staticmethod

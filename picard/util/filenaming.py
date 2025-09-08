@@ -3,12 +3,12 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2013-2014 Ionuț Ciocîrlan
-# Copyright (C) 2013-2014, 2018-2024 Laurent Monin
+# Copyright (C) 2013-2014, 2018-2022 Laurent Monin
 # Copyright (C) 2014 Michael Wiencek
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2017 Ville Skyttä
 # Copyright (C) 2018 Antonio Larrosa
-# Copyright (C) 2019-2022, 2024-2025 Philipp Wolfer
+# Copyright (C) 2019-2022 Philipp Wolfer
 # Copyright (C) 2022 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
@@ -36,8 +36,9 @@ import struct
 import sys
 import unicodedata
 
-from PyQt6.QtCore import QStandardPaths
+from PyQt5.QtCore import QStandardPaths
 
+from picard import log
 from picard.const.sys import (
     IS_LINUX,
     IS_MACOS,
@@ -54,12 +55,13 @@ from picard.util import (
 )
 
 
+win32api = None
 if IS_WIN:
-    import pywintypes
-    import win32api
-else:
-    pywintypes = None
-    win32api = None
+    try:
+        import pywintypes
+        import win32api
+    except ImportError as e:
+        log.warning("pywin32 not available: %s", e)
 
 
 def _get_utf16_length(text):
@@ -78,7 +80,8 @@ def _get_utf16_length(text):
 
 
 def _shorten_to_utf16_length(text, length):
-    """Truncates a str object to the given number of UTF-16 code points."""
+    """Truncates a str object to the given number of UTF-16 code points.
+    """
     assert isinstance(text, str), "This function only works on unicode"
     # if this is a narrow Python build, regular slicing will do exactly
     # what we're looking for
@@ -95,7 +98,7 @@ def _shorten_to_utf16_length(text, length):
     # otherwise, encode the string in UTF-16 using the system's endianness,
     # and shorten by twice the length
     enc = "utf-16%ce" % sys.byteorder[0]
-    shortened = text.encode(enc)[: length * 2]
+    shortened = text.encode(enc)[:length * 2]
     # if we hit a surrogate pair, get rid of the last codepoint
     last = shortened[-2:]
     if last and 0xD800 <= struct.unpack("=H", last)[0] <= 0xDBFF:
@@ -116,8 +119,6 @@ def _shorten_to_utf16_nfd_length(text, length):
 
 
 _re_utf8 = re.compile(r'^utf([-_]?8)$', re.IGNORECASE)
-
-
 def _shorten_to_bytes_length(text, length):  # noqa: E302
     """Truncates a unicode object to the given number of bytes it would take
     when encoded in the "filesystem encoding".
@@ -178,15 +179,14 @@ def shorten_path(path, length, mode):
     length: Maximum number of code points / bytes allowed in a node.
     mode: One of the enum values from ShortenMode.
     """
-
     def shorten(name, length):
         return name and shorten_filename(name, length, mode).strip() or ""
-
     dirpath, filename = os.path.split(path)
     fileroot, ext = os.path.splitext(filename)
     return os.path.join(
-        os.path.join(*[shorten(node, length) for node in dirpath.split(os.path.sep)]),
-        shorten(fileroot, length - len(ext)) + ext,
+        os.path.join(*[shorten(node, length)
+                       for node in dirpath.split(os.path.sep)]),
+        shorten(fileroot, length - len(ext)) + ext
     )
 
 
@@ -229,7 +229,6 @@ def _make_win_short_filename(relpath, reserved=0):
     # to make things more readable...
     def shorten(path, length):
         return shorten_path(path, length, mode=ShortenMode.UTF16)
-
     xlength = _get_utf16_length
 
     # shorten to MAX_NODE_LENGTH from the beginning
@@ -250,7 +249,7 @@ def _make_win_short_filename(relpath, reserved=0):
         computed = _make_win_short_filename._computed = {}
     try:
         finaldirpath, filename_max = computed[(dirpath, reserved)]
-    except KeyError as e:
+    except KeyError:
         dirnames = dirpath.split(os.path.sep)
         # allocate space for the separators,
         # but don't include the final one
@@ -258,7 +257,10 @@ def _make_win_short_filename(relpath, reserved=0):
         # make sure we can have at least single-character dirnames
         average = float(remaining) / len(dirnames)
         if average < 1:
-            raise WinPathTooLong("Path too long. You need to move renamed files to a different directory.") from e
+            raise WinPathTooLong(
+                "Path too long. "
+                "You need to move renamed files to a different directory."
+            )
 
         # try to reduce directories exceeding average with a ratio proportional
         # to how much they exceed with; if not possible, reduce all dirs
@@ -365,9 +367,9 @@ def make_short_filename(basedir, relpath, win_shorten_path=False, relative_to=""
     relpath = os.path.normpath(relpath)
     if win_shorten_path and relative_to:
         relative_to = os.path.abspath(relative_to)
-        assert basedir.startswith(relative_to) and basedir.split(relative_to)[1][:1] in (os.path.sep, ''), (
+        assert basedir.startswith(relative_to) and \
+            basedir.split(relative_to)[1][:1] in (os.path.sep, ''), \
             "`relative_to` must be an ancestor of `basedir`"
-        )
     # always strip the relpath parts
     relpath = os.path.join(*[part.strip() for part in relpath.split(os.path.sep)])
     # if we're on windows, delegate the work to a windows-specific function
@@ -473,7 +475,7 @@ def move_ensure_casing(source_path, target_path):
             # On Linux always force a double move
             _move_force_rename(source_path, target_path)
             return
-        elif IS_WIN:
+        elif IS_WIN and win32api:
             # Windows supports case renaming for NTFS and SMB shares, but not
             # on FAT32 or exFAT file systems. Perform a normal move first,
             # then check the result.
@@ -499,8 +501,6 @@ def make_save_path(path, win_compat=False, mac_compat=False):
 
     - If win_compat is True, trailing dots in file and directory names will
       be removed, as they are unsupported on Windows (dot is a delimiter for the file extension)
-    - If win_compat is True, forbidden filenames like "CON", "PRN", "AUX", "NUL", "COM1" etc. will
-      be replaced with a trailing underscore.
     - Leading dots in file and directory names will be removed. These files cannot be properly
       handled by Windows Explorer and on Unix like systems they count as hidden
     - If mac_compat is True, normalize precomposed Unicode characters on macOS
@@ -517,7 +517,6 @@ def make_save_path(path, win_compat=False, mac_compat=False):
         path = path.replace('./', '_/').replace('.\\', '_\\')
         if path.endswith('.'):
             path = path[:-1] + '_'
-        path = replace_windows_forbidden_names(path)
     # replace . at the beginning of file and directory names
     path = path.replace('/.', '/_').replace('\\.', '\\_')
     if path.startswith('.'):
@@ -526,47 +525,8 @@ def make_save_path(path, win_compat=False, mac_compat=False):
     if mac_compat:
         path = unicodedata.normalize("NFD", path)
     # Remove unicode zero-width space (\u200B) from path
-    path = path.replace("\u200b", "")
+    path = path.replace("\u200B", "")
     return path
-
-
-WINDOWS_FORBIDDEN_NAMES = {
-    'CON',
-    'PRN',
-    'AUX',
-    'NUL',
-    *('COM%d' % i for i in range(1, 10)),
-    'COM¹',
-    'COM²',
-    'COM³',
-    *('LPT%d' % i for i in range(1, 10)),
-    'LPT¹',
-    'LPT²',
-    'LPT³',
-}
-
-WINDOWS_FORBIDDEN_NAMES_RE = re.compile(
-    r'(^|[{separators}])({names})(?=$|[\.{separators}])'.format(
-        separators=re.escape(os.path.sep + (os.altsep if os.altsep else '')),
-        names='|'.join(re.escape(name) for name in WINDOWS_FORBIDDEN_NAMES),
-    ),
-    re.IGNORECASE,
-)
-
-
-def replace_windows_forbidden_names(path):
-    """Replaces Windows forbidden file names with a trailing underscore.
-
-    Windows forbids the following file names:
-    CON, PRN, AUX, NUL, COM1, COM2, COM3, COM4, COM5, COM6, COM7, COM8, COM9,
-    COM¹, COM², COM³, LPT1, LPT2, LPT3, LPT4, LPT5, LPT6, LPT7, LPT8, LPT9,
-    LPT¹, LPT², and LPT³.
-
-    Args:
-        path: filename or path to clean
-    Returns: Path with escaped forbidden names
-    """
-    return WINDOWS_FORBIDDEN_NAMES_RE.sub(r'\1\2_', path)
 
 
 def get_available_filename(new_path, old_path=None):
@@ -587,7 +547,8 @@ def get_available_filename(new_path, old_path=None):
     tmp_filename, ext = os.path.splitext(new_path)
     i = 1
     compare_old_path = old_path and os.path.exists(old_path)
-    while os.path.exists(new_path) and (not compare_old_path or not samefile(old_path, new_path)):
+    while (os.path.exists(new_path)
+               and (not compare_old_path or not samefile(old_path, new_path))):
         new_path = "%s (%d)%s" % (tmp_filename, i, ext)
         i += 1
     return new_path

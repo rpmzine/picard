@@ -2,7 +2,7 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2015, 2018-2021, 2023-2024 Laurent Monin
+# Copyright (C) 2015, 2018-2021 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Ville Skyttä
 # Copyright (C) 2019-2021 Philipp Wolfer
@@ -25,25 +25,31 @@
 import os
 import re
 
-from picard.config import get_config
-from picard.const.defaults import DEFAULT_LOCAL_COVER_ART_REGEX
+from picard.config import (
+    TextOption,
+    get_config,
+)
 from picard.coverart.image import LocalFileCoverArtImage
 from picard.coverart.providers.provider import (
     CoverArtProvider,
     ProviderOptions,
 )
 from picard.coverart.utils import CAA_TYPES
-from picard.i18n import N_
 
-from picard.ui.forms.ui_provider_options_local import Ui_LocalOptions
+from picard.ui.ui_provider_options_local import Ui_LocalOptions
 
 
 class ProviderOptionsLocal(ProviderOptions):
     """
-    Options for Local Files cover art provider
+        Options for Local Files cover art provider
     """
 
     HELP_URL = '/config/options_local_files.html'
+    _DEFAULT_LOCAL_COVER_ART_REGEX = r'^(?:cover|folder|albumart)(.*)\.(?:jpe?g|png|gif|tiff?|webp)$'
+
+    options = [
+        TextOption('setting', 'local_cover_regex', _DEFAULT_LOCAL_COVER_ART_REGEX),
+    ]
 
     _options_ui = Ui_LocalOptions
 
@@ -53,7 +59,7 @@ class ProviderOptionsLocal(ProviderOptions):
         self.ui.local_cover_regex_default.clicked.connect(self.set_local_cover_regex_default)
 
     def set_local_cover_regex_default(self):
-        self.ui.local_cover_regex_edit.setText(DEFAULT_LOCAL_COVER_ART_REGEX)
+        self.ui.local_cover_regex_edit.setText(self._DEFAULT_LOCAL_COVER_ART_REGEX)
 
     def load(self):
         config = get_config()
@@ -65,6 +71,7 @@ class ProviderOptionsLocal(ProviderOptions):
 
 
 class CoverArtProviderLocal(CoverArtProvider):
+
     """Get cover art from local files"""
 
     NAME = "Local Files"
@@ -96,7 +103,7 @@ class CoverArtProviderLocal(CoverArtProvider):
         return list(found.intersection(self._known_types))
 
     def find_local_images(self, current_dir, match_re):
-        for root, _dirs, files in os.walk(current_dir):
+        for root, dirs, files in os.walk(current_dir):
             for filename in files:
                 m = match_re.search(filename)
                 if not m:
@@ -112,5 +119,5 @@ class CoverArtProviderLocal(CoverArtProvider):
                     filepath,
                     types=type_from_filename or self._default_types,
                     support_types=True,
-                    support_multi_types=True,
+                    support_multi_types=True
                 )

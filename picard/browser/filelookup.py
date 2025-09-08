@@ -6,7 +6,7 @@
 # Copyright (C) 2006-2008, 2011-2012 Lukáš Lalinský
 # Copyright (C) 2011 Pavan Chander
 # Copyright (C) 2013 Calvin Walton
-# Copyright (C) 2013, 2018, 2020-2021, 2023-2024 Laurent Monin
+# Copyright (C) 2013, 2018, 2020-2021 Laurent Monin
 # Copyright (C) 2014-2015 Sophist-UK
 # Copyright (C) 2015 Ohm Patel
 # Copyright (C) 2015-2016 Wieland Hoffmann
@@ -32,7 +32,7 @@
 import os.path
 import re
 
-from PyQt6 import QtCore
+from PyQt5 import QtCore
 
 from picard import log
 from picard.config import get_config
@@ -46,28 +46,22 @@ from picard.util import (
 from picard.ui.searchdialog.album import AlbumSearchDialog
 
 
-class FileLookup:
-    RE_MB_ENTITY = re.compile(
-        r"""
+class FileLookup(object):
+
+    RE_MB_ENTITY = re.compile(r"""
         \b(?P<entity>area|artist|instrument|label|place|recording|release|release-group|series|track|url|work)?
         \W*(?P<id>[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})
-    """,
-        re.VERBOSE | re.IGNORECASE,
-    )
+    """, re.VERBOSE | re.IGNORECASE)
 
-    RE_MB_CDTOC = re.compile(
-        r"""
+    RE_MB_CDTOC = re.compile(r"""
         \b(?P<entity>cdtoc)
         \W*(?P<id>[a-z0-9-_.]{28})
-    """,
-        re.VERBOSE | re.IGNORECASE,
-    )
+    """, re.VERBOSE | re.IGNORECASE)
 
     def __init__(self, parent, server, port, local_port):
         self.server = server
         self.local_port = int(local_port)
         self.port = port
-        self.tagger = QtCore.QCoreApplication.instance()
 
     def _url(self, path, params=None):
         if params is None:
@@ -143,10 +137,10 @@ class FileLookup:
         if mbid_matched_callback:
             mbid_matched_callback(entity, id)
         if entity == 'release':
-            self.tagger.load_album(id)
+            QtCore.QObject.tagger.load_album(id)
             return True
         elif entity == 'recording':
-            self.tagger.load_nat(id)
+            QtCore.QObject.tagger.load_nat(id)
             return True
         elif entity == 'release-group':
             AlbumSearchDialog.show_releasegroup_search(id)

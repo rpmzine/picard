@@ -2,9 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2022 Bob Swift
-# Copyright (C) 2022 Kamil
 # Copyright (C) 2022 skelly37
+# Copyright (C) 2022 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -20,13 +19,13 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
-
 from test.picardtestcase import PicardTestCase
 
-from picard.remotecommands import RemoteCommands
+from picard.util.remotecommands import RemoteCommands
 
 
 class TestParsingFilesWithCommands(PicardTestCase):
+
     TEST_FILE = 'test/data/test-command-file-1.txt'
 
     def setUp(self):

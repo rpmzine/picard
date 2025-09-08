@@ -3,9 +3,9 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2008, 2011 Lukáš Lalinský
-# Copyright (C) 2009, 2011, 2019-2021, 2025 Philipp Wolfer
+# Copyright (C) 2009, 2011, 2019-2021 Philipp Wolfer
 # Copyright (C) 2011-2013 Michael Wiencek
-# Copyright (C) 2018, 2020-2021, 2023-2024 Laurent Monin
+# Copyright (C) 2018, 2020-2021 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -22,15 +22,20 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from picard.config import get_config
-from picard.extension_points.options_pages import register_options_page
-from picard.i18n import N_
+from picard.config import (
+    FloatOption,
+    get_config,
+)
 
-from picard.ui.forms.ui_options_matching import Ui_MatchingOptionsPage
-from picard.ui.options import OptionsPage
+from picard.ui.options import (
+    OptionsPage,
+    register_options_page,
+)
+from picard.ui.ui_options_matching import Ui_MatchingOptionsPage
 
 
 class MatchingOptionsPage(OptionsPage):
+
     NAME = 'matching'
     TITLE = N_("Matching")
     PARENT = 'advanced'
@@ -38,16 +43,16 @@ class MatchingOptionsPage(OptionsPage):
     ACTIVE = True
     HELP_URL = "/config/options_matching.html"
 
-    OPTIONS = (
-        ('file_lookup_threshold', ['file_lookup_threshold']),
-        ('cluster_lookup_threshold', ['cluster_lookup_threshold']),
-        ('track_matching_threshold', ['track_matching_threshold']),
-    )
+    options = [
+        FloatOption('setting', 'file_lookup_threshold', 0.7),
+        FloatOption('setting', 'cluster_lookup_threshold', 0.7),
+        FloatOption('setting', 'track_matching_threshold', 0.4),
+    ]
 
     _release_type_sliders = {}
 
     def __init__(self, parent=None):
-        super().__init__(parent=parent)
+        super().__init__(parent)
         self.ui = Ui_MatchingOptionsPage()
         self.ui.setupUi(self)
 

@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2006-2008 Lukáš Lalinský
 # Copyright (C) 2014 Sophist-UK
-# Copyright (C) 2014, 2018, 2020-2024 Laurent Monin
+# Copyright (C) 2014, 2018, 2020-2022 Laurent Monin
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2018 Vishal Choudhary
 # Copyright (C) 2019-2023 Philipp Wolfer
@@ -27,7 +27,7 @@
 
 import uuid
 
-from PyQt6 import (
+from PyQt5 import (
     QtCore,
     QtGui,
     QtWidgets,
@@ -61,9 +61,10 @@ else:
 
 
 class PreserveGeometry:
+
     defaultsize = None
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self):
         Option.add_if_missing('persist', self.opt_name(), QtCore.QByteArray())
         Option.add_if_missing('persist', self.splitters_name(), {})
         if getattr(self, 'finished', None):
@@ -106,7 +107,10 @@ class PreserveGeometry:
     @property
     def _get_splitters(self):
         try:
-            return {self._get_name(splitter): splitter for splitter in self.findChildren(QtWidgets.QSplitter)}
+            return {
+                self._get_name(splitter): splitter
+                for splitter in self.findChildren(QtWidgets.QSplitter)
+            }
         except AttributeError:
             return {}
 
@@ -132,7 +136,8 @@ class PreserveGeometry:
         config = get_config()
         config.persist[self.opt_name()] = self.saveGeometry()
         config.persist[self.splitters_name()] = {
-            name: bytearray(splitter.saveState()) for name, splitter in self._get_splitters.items()
+            name: bytearray(splitter.saveState())
+            for name, splitter in self._get_splitters.items()
         }
 
 
@@ -171,17 +176,13 @@ class SingletonDialog:
 
 
 class PicardDialog(QtWidgets.QDialog, PreserveGeometry):
+
     help_url = None
-    flags = (
-        QtCore.Qt.WindowType.WindowSystemMenuHint
-        | QtCore.Qt.WindowType.WindowTitleHint
-        | QtCore.Qt.WindowType.WindowCloseButtonHint
-    )
+    flags = QtCore.Qt.WindowType.WindowSystemMenuHint | QtCore.Qt.WindowType.WindowTitleHint | QtCore.Qt.WindowType.WindowCloseButtonHint
     ready_for_display = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
-        super().__init__(parent=parent, f=self.flags)
-        self.tagger = QtCore.QCoreApplication.instance()
+        super().__init__(parent, self.flags)
         self.__shown = False
         self.ready_for_display.connect(self.restore_geometry)
 
@@ -199,9 +200,9 @@ class PicardDialog(QtWidgets.QDialog, PreserveGeometry):
             self.__shown = True
         return super().showEvent(event)
 
-    def show_help(self):
-        if self.help_url:
-            url = self.help_url
+    def show_help(self, help_url=None):
+        url = help_url or self.help_url
+        if url:
             if url.startswith('/'):
                 url = DOCS_BASE_URL + url
             webbrowser2.open(url)
@@ -210,22 +211,27 @@ class PicardDialog(QtWidgets.QDialog, PreserveGeometry):
 # With py3, QObjects are no longer hashable unless they have
 # an explicit __hash__ implemented.
 # See: http://python.6.x6.nabble.com/QTreeWidgetItem-is-not-hashable-in-Py3-td5212216.html
-class HashableItem:
+class HashableTreeWidgetItem(QtWidgets.QTreeWidgetItem):
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.__id = uuid.uuid4()
-        self.__hash = hash(self.__id)
+        self.id = uuid.uuid4()
 
     def __eq__(self, other):
-        return self.__id == other.__id
+        return self.id == other.id
 
     def __hash__(self):
-        return self.__hash
+        return hash(str(self.id))
 
 
-class HashableTreeWidgetItem(HashableItem, QtWidgets.QTreeWidgetItem):
-    pass
+class HashableListWidgetItem(QtWidgets.QListWidgetItem):
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.id = uuid.uuid4()
 
-class HashableListWidgetItem(HashableItem, QtWidgets.QListWidgetItem):
-    pass
+    def __eq__(self, other):
+        return self.id == other.id
+
+    def __hash__(self):
+        return hash(str(self.id))

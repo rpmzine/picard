@@ -3,10 +3,10 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2013 Michael Wiencek
-# Copyright (C) 2014-2015, 2018, 2020-2024 Laurent Monin
+# Copyright (C) 2014-2015, 2018, 2020-2022 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2018 Vishal Choudhary
-# Copyright (C) 2018, 2022-2024 Philipp Wolfer
+# Copyright (C) 2018, 2022-2023 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from PyQt6 import (
+from PyQt5 import (
     QtCore,
     QtGui,
     QtWidgets,
@@ -33,26 +33,24 @@ from picard.collection import (
     load_user_collections,
     user_collections,
 )
-from picard.i18n import (
-    gettext as _,
-    ngettext,
-    sort_key,
-)
+from picard.i18n import sort_key
 
 
 class CollectionMenu(QtWidgets.QMenu):
-    def __init__(self, albums, title, parent=None):
-        super().__init__(title, parent=parent)
-        self.releases = set(a.id for a in albums)
-        self._ignore_update = False
-        self._ignore_hover = False
-        self._update_collections()
 
-    def _update_collections(self):
+    def __init__(self, albums, *args):
+        super().__init__(*args)
+        self.ids = set(a.id for a in albums)
+        self._ignore_update = False
+        self.update_collections()
+
+    def update_collections(self):
         self._ignore_update = True
         self.clear()
         self.actions = []
-        for collection in sorted(user_collections.values(), key=lambda c: (sort_key(c.name), c.id)):
+        for id_, collection in sorted(user_collections.items(),
+                                      key=lambda k_v:
+                                      (sort_key(str(k_v[1])), k_v[0])):
             action = QtWidgets.QWidgetAction(self)
             action.setDefaultWidget(CollectionMenuItem(self, collection))
             self.addAction(action)
@@ -60,19 +58,19 @@ class CollectionMenu(QtWidgets.QMenu):
         self._ignore_update = False
         self.addSeparator()
         self.refresh_action = self.addAction(_("Refresh List"))
-        self.hovered.connect(self._on_hovered)
+        self.hovered.connect(self.update_highlight)
 
-    def _refresh_list(self):
+    def refresh_list(self):
         self.refresh_action.setEnabled(False)
-        load_user_collections(self._update_collections)
+        load_user_collections(self.update_collections)
 
     def mouseReleaseEvent(self, event):
         # Not using self.refresh_action.triggered because it closes the menu
         if self.actionAt(event.pos()) == self.refresh_action and self.refresh_action.isEnabled():
-            self._refresh_list()
+            self.refresh_list()
 
-    def _on_hovered(self, action):
-        if self._ignore_hover:
+    def update_highlight(self, action):
+        if self._ignore_update:
             return
         for a in self.actions:
             a.defaultWidget().set_active(a == action)
@@ -91,8 +89,9 @@ class CollectionMenu(QtWidgets.QMenu):
 
 
 class CollectionMenuItem(QtWidgets.QWidget):
-    def __init__(self, menu, collection, parent=None):
-        super().__init__(parent=parent)
+
+    def __init__(self, menu, collection):
+        super().__init__()
         self.menu = menu
         self.active = False
         self._setup_layout(menu, collection)
@@ -105,9 +104,8 @@ class CollectionMenuItem(QtWidgets.QWidget):
             style.pixelMetric(QtWidgets.QStyle.PixelMetric.PM_LayoutLeftMargin),
             style.pixelMetric(QtWidgets.QStyle.PixelMetric.PM_FocusFrameVMargin),
             style.pixelMetric(QtWidgets.QStyle.PixelMetric.PM_LayoutRightMargin),
-            style.pixelMetric(QtWidgets.QStyle.PixelMetric.PM_FocusFrameVMargin),
-        )
-        self.checkbox = CollectionCheckBox(menu, collection, parent=self)
+            style.pixelMetric(QtWidgets.QStyle.PixelMetric.PM_FocusFrameVMargin))
+        self.checkbox = CollectionCheckBox(self, menu, collection)
         layout.addWidget(self.checkbox)
 
     def _setup_colors(self):
@@ -141,13 +139,14 @@ class CollectionMenuItem(QtWidgets.QWidget):
 
 
 class CollectionCheckBox(QtWidgets.QCheckBox):
-    def __init__(self, menu, collection, parent=None):
+
+    def __init__(self, parent, menu, collection):
         self.menu = menu
         self.collection = collection
-        super().__init__(self._label(), parent=parent)
+        super().__init__(self.label(), parent)
 
-        releases = collection.releases & menu.releases
-        if len(releases) == len(menu.releases):
+        releases = collection.releases & menu.ids
+        if len(releases) == len(menu.ids):
             self.setCheckState(QtCore.Qt.CheckState.Checked)
         elif not releases:
             self.setCheckState(QtCore.Qt.CheckState.Unchecked)
@@ -155,21 +154,21 @@ class CollectionCheckBox(QtWidgets.QCheckBox):
             self.setCheckState(QtCore.Qt.CheckState.PartiallyChecked)
 
     def nextCheckState(self):
-        releases = self.menu.releases
-        if releases & self.collection.pending_releases:
+        ids = self.menu.ids
+        if ids & self.collection.pending:
             return
-        diff = releases - self.collection.releases
+        diff = ids - self.collection.releases
         if diff:
-            self.collection.add_releases(diff, self._update_text)
+            self.collection.add_releases(diff, self.updateText)
             self.setCheckState(QtCore.Qt.CheckState.Checked)
         else:
-            self.collection.remove_releases(releases & self.collection.releases, self._update_text)
+            self.collection.remove_releases(ids & self.collection.releases, self.updateText)
             self.setCheckState(QtCore.Qt.CheckState.Unchecked)
 
-    def _update_text(self):
-        self.setText(self._label())
+    def updateText(self):
+        self.setText(self.label())
 
-    def _label(self):
+    def label(self):
         c = self.collection
         return ngettext("%(name)s (%(count)i release)", "%(name)s (%(count)i releases)", c.size) % {
             'name': c.name,

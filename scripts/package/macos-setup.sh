@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
+# Install gettext
+brew install gettext
+brew link gettext --force
+
 # Install requested Python version
 if [ -n "$PYTHON_VERSION" ]; then
   PYTHON_FILENAME=python-$PYTHON_VERSION.pkg
@@ -16,7 +20,7 @@ if [ -n "$DISCID_VERSION" ]; then
   wget "ftp://ftp.musicbrainz.org/pub/musicbrainz/libdiscid/$DISCID_FILENAME"
   echo "$DISCID_SHA256SUM  $DISCID_FILENAME" | shasum --algorithm 256 --check --status
   unzip "$DISCID_FILENAME"
-  cp "libdiscid-$DISCID_VERSION-mac/universal2/libdiscid.0.dylib" .
+  cp "libdiscid-$DISCID_VERSION-mac/x86_64/libdiscid.0.dylib" .
 fi
 
 # Install fpcalc

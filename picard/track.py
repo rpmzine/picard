@@ -6,12 +6,12 @@
 # Copyright (C) 2006-2007, 2011 Lukáš Lalinský
 # Copyright (C) 2008 Gary van der Merwe
 # Copyright (C) 2009 Carlin Mangar
-# Copyright (C) 2010, 2014-2015, 2018-2025 Philipp Wolfer
+# Copyright (C) 2010, 2014-2015, 2018-2022 Philipp Wolfer
 # Copyright (C) 2011 Chad Wilson
 # Copyright (C) 2011 Wieland Hoffmann
 # Copyright (C) 2011-2013 Michael Wiencek
 # Copyright (C) 2014, 2017 Sophist-UK
-# Copyright (C) 2014-2015, 2018-2024 Laurent Monin
+# Copyright (C) 2014-2015, 2018-2022 Laurent Monin
 # Copyright (C) 2016 Mark Trolley
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016 Suhas
@@ -23,9 +23,6 @@
 # Copyright (C) 2020, 2022 Adam James
 # Copyright (C) 2021 Gabriel Ferreira
 # Copyright (C) 2021 Petit Minion
-# Copyright (C) 2024 Arnab Chakraborty
-# Copyright (C) 2024 Giorgio Fontanive
-# Copyright (C) 2024 Rakim Middya
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -46,11 +43,10 @@ from collections import (
     Counter,
     defaultdict,
 )
-from operator import attrgetter
 import re
 import traceback
 
-from PyQt6 import QtCore
+from PyQt5 import QtCore
 
 from picard import log
 from picard.config import get_config
@@ -59,14 +55,10 @@ from picard.const import (
     SILENCE_TRACK_TITLE,
     VARIOUS_ARTISTS_ID,
 )
+from picard.dataobj import DataObject
 from picard.file import (
     run_file_post_addition_to_track_processors,
     run_file_post_removal_from_track_processors,
-)
-from picard.i18n import gettext as _
-from picard.item import (
-    FileListItem,
-    MetadataItem,
 )
 from picard.mbjson import recording_to_metadata
 from picard.metadata import (
@@ -77,17 +69,24 @@ from picard.metadata import (
 from picard.script import (
     ScriptError,
     ScriptParser,
-    iter_active_tagging_scripts,
+    enabled_tagger_scripts_texts,
 )
 from picard.util import (
     pattern_as_regex,
     titlecase,
 )
-from picard.util.imagelist import ImageList
+from picard.util.imagelist import (
+    ImageList,
+    add_metadata_images,
+    remove_metadata_images,
+)
 from picard.util.textencoding import asciipunct
+
+from picard.ui.item import FileListItem
 
 
 class TagGenreFilter:
+
     def __init__(self, filters):
         self.errors = dict()
         self.match_regexes = defaultdict(list)
@@ -136,19 +135,24 @@ class TagGenreFilter:
             yield fmt % {'lineno': lineno + 1, 'error': error}
 
 
-class TrackArtist(MetadataItem):
+class TrackArtist(DataObject):
     def __init__(self, ta_id):
         super().__init__(ta_id)
 
 
-class Track(FileListItem):
+class Track(DataObject, FileListItem):
+
+    metadata_images_changed = QtCore.pyqtSignal()
+
     def __init__(self, track_id, album=None):
-        super().__init__(track_id)
+        DataObject.__init__(self, track_id)
+        FileListItem.__init__(self)
+        self.metadata = Metadata()
+        self.orig_metadata = Metadata()
         self.album = album
         self.scripted_metadata = Metadata()
         self._track_artists = []
         self._orig_images = None
-        self.iter_children_items_metadata_ignore_attrs = {'orig_metadata'}
 
     @property
     def num_linked_files(self):
@@ -157,8 +161,12 @@ class Track(FileListItem):
     def __repr__(self):
         return '<Track %s %r>' % (self.id, self.metadata["title"])
 
+    @property
+    def linked_files(self):
+        """For backward compatibility with old code in plugins"""
+        return self.files
+
     def add_file(self, file, new_album=True):
-        track_will_expand = False
         if file not in self.files:
             track_will_expand = self.num_linked_files == 1
             if not self.files:  # The track uses original metadata from the file only
@@ -166,7 +174,7 @@ class Track(FileListItem):
                 self.orig_metadata.images = ImageList()
             self.files.append(file)
         self.update_file_metadata(file)
-        self.add_metadata_images_from_children([file])
+        add_metadata_images(self, [file])
         self.album.add_file(self, file, new_album=new_album)
         file.metadata_images_changed.connect(self.update_metadata_images)
         run_file_post_addition_to_track_processors(self, file)
@@ -204,49 +212,45 @@ class Track(FileListItem):
         file.metadata_images_changed.disconnect(self.update_metadata_images)
         file.copy_metadata(file.orig_metadata, preserve_deleted=False)
         self.album.remove_file(self, file, new_album=new_album)
-        self.remove_metadata_images_from_children([file])
+        remove_metadata_images(self, [file])
         if not self.files and self._orig_images:
             self.orig_metadata.images = self._orig_images
             self.metadata.images = self._orig_images.copy()
         run_file_post_removal_from_track_processors(self, file)
         self.update()
-        if self.ui_item.isSelected():
+        if self.item.isSelected():
             self.tagger.window.refresh_metadatabox()
 
     @staticmethod
     def run_scripts(metadata, strip_whitespace=False):
-        for script in iter_active_tagging_scripts():
+        for s_name, s_text in enabled_tagger_scripts_texts():
             parser = ScriptParser()
             try:
-                parser.eval(script.content, metadata)
+                parser.eval(s_text, metadata)
             except ScriptError:
-                log.exception("Failed to run tagger script %s on track", script.name)
+                log.exception("Failed to run tagger script %s on track", s_name)
             if strip_whitespace:
                 metadata.strip_whitespace()
 
     def update(self):
-        if self.ui_item:
-            self.ui_item.update()
+        if self.item:
+            self.item.update()
 
     def is_linked(self):
         return self.num_linked_files > 0
 
-    @property
     def can_save(self):
         """Return if this object can be saved."""
-        return any(file.can_save for file in self.files)
+        return any(file.can_save() for file in self.files)
 
-    @property
     def can_remove(self):
         """Return if this object can be removed."""
-        return any(file.can_remove for file in self.files)
+        return any(file.can_remove() for file in self.files)
 
-    @property
     def can_edit_tags(self):
         """Return if this object supports tag editing."""
         return True
 
-    @property
     def can_view_info(self):
         return self.num_linked_files == 1 or bool(self.metadata.images)
 
@@ -262,8 +266,6 @@ class Track(FileListItem):
             return "%s%s  %s" % (prefix, m['tracknumber'].zfill(2), m['title'])
         elif column == 'covercount':
             return self.cover_art_description()
-        elif column == 'coverdimensions':
-            return self.cover_art_dimensions()
         elif column in m:
             return m[column]
         elif self.num_linked_files == 1:
@@ -286,13 +288,10 @@ class Track(FileListItem):
 
     def ignored_for_completeness(self):
         config = get_config()
-        if self.is_video() and config.setting['completeness_ignore_videos']:
-            return True
-        if self.is_pregap() and config.setting['completeness_ignore_pregap']:
-            return True
-        if self.is_data() and config.setting['completeness_ignore_data']:
-            return True
-        if self.is_silence() and config.setting['completeness_ignore_silence']:
+        if (config.setting['completeness_ignore_videos'] and self.is_video()) \
+                or (config.setting['completeness_ignore_pregap'] and self.is_pregap()) \
+                or (config.setting['completeness_ignore_data'] and self.is_data()) \
+                or (config.setting['completeness_ignore_silence'] and self.is_silence()):
             return True
         return False
 
@@ -319,8 +318,6 @@ class Track(FileListItem):
 
         if config.setting['use_genres']:
             self._convert_folksonomy_tags_to_genre()
-            self._add_folksonomy_tags_variable()
-            self._add_genres_variable()
 
         # Convert Unicode punctuation
         if config.setting['convert_punctuation']:
@@ -353,64 +350,37 @@ class Track(FileListItem):
 
     def _convert_folksonomy_tags_to_genre(self):
         config = get_config()
-        if config.setting['folksonomy_tags']:
-            genres = self._merged_folksonomy_tags
-        else:
-            genres = self._merged_genres
+        # Combine release and track genres
+        genres = Counter(self.genres)
+        genres += self.album.genres
+        if self.album.release_group:
+            genres += self.album.release_group.genres
+        if not genres and config.setting['artists_genres']:
+            # For compilations use each track's artists to look up genres
+            if self.metadata['musicbrainz_albumartistid'] == VARIOUS_ARTISTS_ID:
+                for artist in self._track_artists:
+                    genres += artist.genres
+            else:
+                for artist in self.album.get_album_artists():
+                    genres += artist.genres
+
         self.metadata['genre'] = self._genres_to_metadata(
             genres,
             limit=config.setting['max_genres'],
             minusage=config.setting['min_genre_usage'],
             filters=config.setting['genres_filter'],
-            join_with=config.setting['join_genres'],
+            join_with=config.setting['join_genres']
         )
-
-    @property
-    def _merged_folksonomy_tags(self):
-        return self._merge_folksonomy_tags('folksonomy_tags')
-
-    @property
-    def _merged_genres(self):
-        return self._merge_folksonomy_tags('genres')
-
-    def _merge_folksonomy_tags(self, name):
-        """Merge folksonomy_tags or genres from track, album, release group and artists."""
-        getter = attrgetter(name)
-        genres = getter(self)
-        if self.album:
-            genres += getter(self.album)
-            if self.album.release_group:
-                genres += getter(self.album.release_group)
-        if not genres:
-            config = get_config()
-            if config.setting['artists_genres']:
-                # For compilations use each track's artists to look up genres
-                if self.metadata['musicbrainz_albumartistid'] == VARIOUS_ARTISTS_ID:
-                    for artist in self._track_artists:
-                        genres += getter(artist)
-                elif self.album:
-                    for artist in self.album.get_album_artists():
-                        genres += getter(artist)
-        return genres
-
-    def _add_folksonomy_tags_variable(self):
-        tags = self._merged_folksonomy_tags - self._merged_genres
-        self.metadata['~folksonomy_tags'] = sorted(tags)
-
-    def _add_genres_variable(self):
-        genres = self._merged_genres
-        self.metadata['~genres'] = sorted(genres)
 
 
 class NonAlbumTrack(Track):
+
     def __init__(self, nat_id):
-        tagger = QtCore.QCoreApplication.instance()
-        super().__init__(nat_id, tagger.nats)
+        super().__init__(nat_id, self.tagger.nats)
         self.callback = None
         self.loaded = False
         self.status = None
 
-    @property
     def can_refresh(self):
         return True
 
@@ -428,7 +398,7 @@ class NonAlbumTrack(Track):
         self.status = _("[loading recording information]")
         self.clear_errors()
         self.loaded = False
-        self.album.update(update_tracks=True)
+        self.album.update(True)
         config = get_config()
         require_authentication = False
         inc = {
@@ -455,10 +425,9 @@ class NonAlbumTrack(Track):
             inc=inc,
             mblogin=require_authentication,
             priority=priority,
-            refresh=refresh,
+            refresh=refresh
         )
 
-    @property
     def can_remove(self):
         return True
 
@@ -476,7 +445,7 @@ class NonAlbumTrack(Track):
     def _set_error(self, error):
         self.error_append(error)
         self.status = _("[could not load recording %s]") % self.id
-        self.album.update(update_tracks=True)
+        self.album.update(True)
 
     def _parse_recording(self, recording):
         m = self.metadata
@@ -490,7 +459,7 @@ class NonAlbumTrack(Track):
         if self.callback:
             self.callback()
             self.callback = None
-        self.album.update(update_tracks=True)
+        self.album.update(True)
 
     def _customize_metadata(self):
         super()._customize_metadata()

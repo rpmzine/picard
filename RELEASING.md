@@ -66,7 +66,7 @@ Edit `picard/__init__.py` and set new version tuple
 Run tests:
 
 ```bash
-pytest
+python setup.py test
 ```
 
 Commit changes!
@@ -88,7 +88,7 @@ Edit `picard/__init__.py` and set new dev version tuple.
 Run tests:
 
 ```bash
-pytest
+python setup.py test
 ```
 
 Commit changes!

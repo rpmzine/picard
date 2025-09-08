@@ -5,8 +5,8 @@
 # Copyright (C) 2007 Lukáš Lalinský
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2017 Sambhav Kothari
-# Copyright (C) 2018, 2020-2021, 2024 Laurent Monin
-# Copyright (C) 2019, 2022 Philipp Wolfer
+# Copyright (C) 2018, 2020-2021 Laurent Monin
+# Copyright (C) 2019 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -25,13 +25,14 @@
 
 import re
 
-from PyQt6.QtCore import QXmlStreamReader
+from PyQt5.QtCore import QXmlStreamReader
 
 
 _node_name_re = re.compile('[^a-zA-Z0-9]')
 
 
-class XmlNode:
+class XmlNode(object):
+
     def __init__(self):
         self.text = ''
         self.children = {}
@@ -53,7 +54,7 @@ class XmlNode:
             try:
                 return self.attribs[name]
             except KeyError:
-                raise AttributeError(name) from None
+                raise AttributeError(name)
 
 
 def _node_name(n):

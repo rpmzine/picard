@@ -3,9 +3,9 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2012 Frederik “Freso” S. Olesen
-# Copyright (C) 2013-2014, 2018-2024 Laurent Monin
+# Copyright (C) 2013-2014, 2018-2022 Laurent Monin
 # Copyright (C) 2017 Sambhav Kothari
-# Copyright (C) 2017-2024 Philipp Wolfer
+# Copyright (C) 2017-2022, 2024 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -22,12 +22,13 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-import gettext as module_gettext
+import builtins
+import gettext
 import locale
 import os
 import re
 
-from PyQt6.QtCore import (
+from PyQt5.QtCore import (
     QCollator,
     QLocale,
 )
@@ -38,18 +39,13 @@ from picard.const.sys import (
 )
 
 
+builtins.__dict__['N_'] = lambda a: a
+
+
 _logger = None
 _qcollator = QCollator()
 _qcollator_numeric = QCollator()
 _qcollator_numeric.setNumericMode(True)
-
-_null_translations = module_gettext.NullTranslations()
-_translation = {
-    'main': _null_translations,
-    'attributes': _null_translations,
-    'constants': _null_translations,
-    'countries': _null_translations,
-}
 
 
 def set_locale_from_env():
@@ -103,7 +99,6 @@ elif IS_MACOS:
         return defaults.objectForKey_('AppleLanguages')[0].replace('-', '_')
 
 else:
-
     def _get_default_locale():
         return None
 
@@ -128,10 +123,10 @@ def _try_locales(language):
 def _load_translation(domain, localedir, language):
     try:
         _logger("Loading gettext translation for %s, localedir=%r, language=%r", domain, localedir, language)
-        return module_gettext.translation(domain, localedir, languages=[language])
+        return gettext.translation(domain, localedir, languages=[language])
     except OSError as e:
         _logger(e)
-        return module_gettext.NullTranslations()
+        return gettext.NullTranslations()
 
 
 def _log_lang_env_vars():
@@ -186,53 +181,49 @@ def setup_gettext(localedir, ui_language=None, logger=None):
     _qcollator_numeric = QCollator()
     _qcollator_numeric.setNumericMode(True)
 
-    global _translation
-    _translation = {
-        'main': _load_translation('picard', localedir, language=current_locale),
-        'attributes': _load_translation('picard-attributes', localedir, language=current_locale),
-        'constants': _load_translation('picard-constants', localedir, language=current_locale),
-        'countries': _load_translation('picard-countries', localedir, language=current_locale),
-    }
-    _logger(_translation)
+    trans = _load_translation('picard', localedir, language=current_locale)
+    trans_attributes = _load_translation('picard-attributes', localedir, language=current_locale)
+    trans_constants = _load_translation('picard-constants', localedir, language=current_locale)
+    trans_countries = _load_translation('picard-countries', localedir, language=current_locale)
+
+    trans.install(['ngettext'])
+    builtins.__dict__['gettext_attributes'] = trans_attributes.gettext
+    builtins.__dict__['gettext_constants'] = trans_constants.gettext
+    builtins.__dict__['gettext_countries'] = trans_countries.gettext
+
+    if hasattr(trans_attributes, 'pgettext'):
+        builtins.__dict__['pgettext_attributes'] = trans_attributes.pgettext
+    else:
+        def pgettext(context, message):
+            return gettext_ctxt(trans_attributes.gettext, message, context)
+        builtins.__dict__['pgettext_attributes'] = pgettext
+
+    _logger("_ = %r", _)
+    _logger("N_ = %r", N_)
+    _logger("ngettext = %r", ngettext)
+    _logger("gettext_countries = %r", gettext_countries)
+    _logger("gettext_attributes = %r", gettext_attributes)
+    _logger("pgettext_attributes = %r", pgettext_attributes)
 
 
-def gettext(message: str) -> str:
-    """Translate the messsage using the current translator."""
-    # Calling gettext("") by default returns the header of the PO file for the
-    # current locale. This is unexpected. Return an empty string instead.
-    if message == "":
+# Workaround for po files with msgctxt which isn't supported by Python < 3.8
+# gettext
+# msgctxt are used within attributes.po, and gettext is failing to translate
+# strings due to that
+# This workaround is a hack until we get proper msgctxt support
+_CONTEXT_SEPARATOR = "\x04"
+
+
+def gettext_ctxt(gettext_, message, context=None):
+    if context is None:
+        return gettext_(message)
+
+    msg_with_ctxt = "%s%s%s" % (context, _CONTEXT_SEPARATOR, message)
+    translated = gettext_(msg_with_ctxt)
+    if _CONTEXT_SEPARATOR in translated:
+        # no translation found, return original message
         return message
-    return _translation['main'].gettext(message)
-
-
-def _(message: str) -> str:
-    """Alias for gettext"""
-    return gettext(message)
-
-
-def N_(message: str) -> str:
-    """No-op marker for translatable strings"""
-    return message
-
-
-def ngettext(singular: str, plural: str, n: int) -> str:
-    return _translation['main'].ngettext(singular, plural, n)
-
-
-def pgettext_attributes(context: str, message: str) -> str:
-    return _translation['attributes'].pgettext(context, message)
-
-
-def gettext_attributes(message: str) -> str:
-    return _translation['attributes'].gettext(message)
-
-
-def gettext_countries(message: str) -> str:
-    return _translation['countries'].gettext(message)
-
-
-def gettext_constants(message: str) -> str:
-    return _translation['constants'].gettext(message)
+    return translated
 
 
 def sort_key(string, numeric=False):
@@ -284,7 +275,8 @@ def _sort_key_qt(string, numeric=False):
 
 def _sort_key_strxfrm(string, numeric=False):
     if numeric:
-        return [int(s) if s.isdecimal() else _strxfrm(s) for s in RE_NUMBER.split(str(string).replace('\0', ''))]
+        return [int(s) if s.isdecimal() else _strxfrm(s)
+            for s in RE_NUMBER.split(str(string).replace('\0', ''))]
     else:
         return _strxfrm(string)
 

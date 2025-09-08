@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2019 Philipp Wolfer
-# Copyright (C) 2020-2022 Laurent Monin
+# Copyright (C) 2020-2021 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -26,12 +26,13 @@ from picard.formats import mutagenext
 
 
 class MutagenExtTest(PicardTestCase):
+
     def test_delall_ci(self):
         tags = {
             'TAGNAME:ABC': 'a',
             'tagname:abc': 'a',
             'TagName:Abc': 'a',
-            'OtherTag': 'a',
+            'OtherTag': 'a'
         }
         mutagenext.delall_ci(tags, 'tagname:Abc')
         self.assertEqual({'OtherTag': 'a'}, tags)

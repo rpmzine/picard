@@ -7,7 +7,6 @@
 !define PRODUCT_PUBLISHER "MusicBrainz"
 !define PRODUCT_DESCRIPTION "%(description)s"
 !define PRODUCT_URL "%(url)s"
-!define PRODUCT_HELP_URL "https://picard-docs.musicbrainz.org/"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_ROOT_KEY "HKLM"
 
@@ -25,7 +24,7 @@ RequestExecutionLevel admin
 InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
 
 ; The default installation directory
-InstallDirRegKey HKLM "Software\${PRODUCT_PUBLISHER}\${PRODUCT_NAME}" "InstallDir"
+InstallDirRegKey HKLM "Software\MusicBrainz\${PRODUCT_NAME}" "InstallDir"
 
 !include "MUI2.nsh"
 !include "InstallOptions.nsh"
@@ -140,7 +139,7 @@ Section "!$(SectionRequired)" required
     File /r /x "locale" "${PROJECT_PATH}\dist\picard\"
 
     ; Write the installation path into the registry
-    WriteRegStr HKLM "Software\${PRODUCT_PUBLISHER}\${PRODUCT_NAME}" "InstallDir" "$INSTDIR"
+    WriteRegStr HKLM "Software\MusicBrainz\${PRODUCT_NAME}" "InstallDir" "$INSTDIR"
 
     ; Create uninstaller
     WriteUninstaller "$INSTDIR\uninst.exe"
@@ -151,15 +150,14 @@ Section "!$(SectionRequired)" required
     WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "InstallSource" "$INSTDIR\"
     WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "Comments" "${PRODUCT_DESCRIPTION}"
     WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "URLInfoAbout" "${PRODUCT_URL}"
-    WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "HelpLink" "${PRODUCT_HELP_URL}"
     WriteRegStr ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}" "UninstallString" "$INSTDIR\uninst.exe"
 SectionEnd
 
 Section "$(SectionLanguages)" lang
-  RMDir "$INSTDIR\_internal\locale"
-  CreateDirectory "$INSTDIR\_internal\locale"
-  SetOutPath "$INSTDIR\_internal\locale"
-  File /r "${PROJECT_PATH}\dist\picard\_internal\locale\"
+  RMDir "$INSTDIR\locale"
+  CreateDirectory "$INSTDIR\locale"
+  SetOutPath "$INSTDIR\locale"
+  File /r "${PROJECT_PATH}\dist\picard\locale\"
 SectionEnd
 
 SectionGroup "$(SectionShortcuts)" shortcuts
@@ -198,7 +196,7 @@ Section Uninstall
   Delete "$QUICKLAUNCH\${PRODUCT_NAME}.lnk"
 
   DeleteRegKey ${PRODUCT_UNINST_ROOT_KEY} "${PRODUCT_UNINST_KEY}"
-  DeleteRegKey HKLM "Software\${PRODUCT_PUBLISHER}\${PRODUCT_NAME}"
+  DeleteRegKey HKLM "Software\MusicBrainz\${PRODUCT_NAME}"
 
   !insertmacro INSTALLOPTIONS_READ $R0 "removeSettings.ini" "Field 1" "State"
   StrCmp $R0 "1" 0 +2

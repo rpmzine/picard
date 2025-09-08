@@ -2,8 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
+# Copyright (C) 2022 Laurent Monin
 # Copyright (C) 2022 Philipp Wolfer
-# Copyright (C) 2022-2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -35,5 +35,8 @@ def toc_from_file(path):
     results on other non-standard cases."""
     with open(path, encoding='utf-8') as f:
         data = yaml.safe_load(f)
-        toc_entries = (TocEntry(num, t['Start sector'], t['End sector']) for num, t in data['TOC'].items())
+        toc_entries = (
+            TocEntry(num, t['Start sector'], t['End sector'])
+            for num, t in data['TOC'].items()
+        )
         return calculate_mb_toc_numbers(toc_entries)

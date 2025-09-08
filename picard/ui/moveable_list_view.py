@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2018 Sambhav Kothari
-# Copyright (C) 2018, 2020-2024 Laurent Monin
+# Copyright (C) 2018, 2020-2022 Laurent Monin
 # Copyright (C) 2022 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
@@ -23,13 +23,14 @@
 
 from functools import partial
 
-from PyQt6 import (
+from PyQt5 import (
     QtCore,
     QtWidgets,
 )
 
 
 class MoveableListView:
+
     def __init__(self, list_widget, up_button, down_button, callback=None):
         self.list_widget = list_widget
         self.up_button = up_button

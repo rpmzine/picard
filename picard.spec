@@ -5,7 +5,6 @@ import os
 import platform
 import sys
 
-
 sys.path.insert(0, '.')
 from picard import (
     PICARD_APP_ID,
@@ -37,7 +36,7 @@ def get_locale_messages():
     data_files = []
     for locale in _picard_get_locale_files():
         data_files.append(
-            (os.path.join("picard", "locale", locale[1], "LC_MESSAGES", locale[0] + ".mo"),
+            (os.path.join("build", "locale", locale[1], "LC_MESSAGES", locale[0] + ".mo"),
              os.path.join("locale", locale[1], "LC_MESSAGES")))
     return data_files
 
@@ -55,7 +54,7 @@ if os_name == 'Windows':
     binaries += [('discid.dll', '.')]
     data_files.append((os.path.join('resources', 'win10', '*'), '.'))
 
-elif os_name == 'Darwin':
+if os_name == 'Darwin':
     binaries += [('libdiscid.0.dylib', '.')]
 
 if os.path.isfile(fpcalc_name):
@@ -87,6 +86,8 @@ a = Analysis(['tagger.py'],
              hookspath=[],
              runtime_hooks=runtime_hooks,
              excludes=[],
+             win_no_prefer_redirects=False,
+             win_private_assemblies=False,
              cipher=block_cipher)
 
 
@@ -114,7 +115,6 @@ else:
     exe = EXE(pyz,
               a.scripts,
               exclude_binaries=True,
-              target_arch=os.environ.get('TARGET_ARCH', None),
               # Avoid name clash between picard executable and picard module folder
               name='picard' if os_name == 'Windows' else 'picard-run',
               debug=False,
@@ -122,10 +122,7 @@ else:
               upx=False,
               icon='picard.ico',
               version='win-version-info.txt',
-              console=False,
-              # macOS code signing
-              codesign_identity=os.environ.get('CODESIGN_IDENTITY', None),
-              entitlements_file='./scripts/package/entitlements.plist')
+              console=False)
 
 
     coll = COLLECT(exe,
@@ -142,9 +139,9 @@ else:
             'CFBundleDisplayName': PICARD_DISPLAY_NAME,
             'CFBundleIdentifier': PICARD_APP_ID,
             'CFBundleVersion': '%d.%d.%d' % PICARD_VERSION[:3],
-            'CFBundleShortVersionString': PICARD_VERSION.short_str(),
+            'CFBundleShortVersionString': PICARD_VERSION.to_string(short=True),
             'LSApplicationCategoryType': 'public.app-category.music',
-            'LSMinimumSystemVersion': os.environ.get('MACOSX_DEPLOYMENT_TARGET', '11.0'),
+            'LSMinimumSystemVersion': os.environ.get('MACOSX_DEPLOYMENT_TARGET', '10.12'),
             'NSHighResolutionCapable': True,
             'NSPrincipalClass': 'NSApplication',
             'NSRequiresAquaSystemAppearance': False,
@@ -177,7 +174,7 @@ else:
 
         # Add additional supported file types by extension
         from picard.formats import supported_formats
-        for extensions, _name in supported_formats():
+        for extensions, name in supported_formats():
             info_plist['CFBundleDocumentTypes'].append({
                 'CFBundleTypeExtensions': [ext[1:] for ext in extensions],
                 'CFBundleTypeRole': 'Editor',
@@ -186,6 +183,6 @@ else:
         app = BUNDLE(coll,
                      name='{} {}.app'.format(PICARD_ORG_NAME, PICARD_APP_NAME),
                      icon='picard.icns',
-                     bundle_identifier=PICARD_APP_ID,
+                     bundle_identifier=None,
                      info_plist=info_plist
                      )

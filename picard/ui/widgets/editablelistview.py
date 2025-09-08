@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2019-2022 Philipp Wolfer
-# Copyright (C) 2020-2024 Laurent Monin
+# Copyright (C) 2020-2022 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -20,7 +20,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from PyQt6 import (
+from PyQt5 import (
     QtCore,
     QtGui,
     QtWidgets,
@@ -29,7 +29,7 @@ from PyQt6 import (
 
 class EditableListView(QtWidgets.QListView):
     def __init__(self, parent=None):
-        super().__init__(parent=parent)
+        super().__init__(parent)
         self.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
 
@@ -42,8 +42,7 @@ class EditableListView(QtWidgets.QListView):
             super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event):
-        pos = event.pos()
-        index = self.indexAt(QtCore.QPoint(pos.x(), pos.y()))
+        index = self.indexAt(QtCore.QPoint(event.x(), event.y()))
         if index.isValid():
             super().mouseDoubleClickEvent(event)
         else:
@@ -84,7 +83,7 @@ class EditableListView(QtWidgets.QListView):
 
     def add_empty_row(self):
         # Setting the focus causes any open editor to getting closed
-        self.setFocus(QtCore.Qt.FocusReason.OtherFocusReason)
+        self.setFocus(True)
         index = self.add_item()
         self.setCurrentIndex(index)
         self.edit(index)
@@ -209,9 +208,7 @@ class EditableListModel(QtCore.QAbstractListModel):
     def get_display_name(self, item):  # pylint: disable=no-self-use
         return item
 
-    def rowCount(self, parent=None):
-        # if parent is None:
-        #     parent = QtCore.QModelIndex()
+    def rowCount(self, parent=QtCore.QModelIndex()):
         return len(self._items)
 
     def data(self, index, role=QtCore.Qt.ItemDataRole.DisplayRole):
@@ -241,12 +238,10 @@ class EditableListModel(QtCore.QAbstractListModel):
 
     def flags(self, index):
         if index.isValid():
-            flags = (
-                QtCore.Qt.ItemFlag.ItemIsSelectable
+            flags = (QtCore.Qt.ItemFlag.ItemIsSelectable
                 | QtCore.Qt.ItemFlag.ItemIsEditable
                 | QtCore.Qt.ItemFlag.ItemIsEnabled
-                | QtCore.Qt.ItemFlag.ItemNeverHasChildren
-            )
+                | QtCore.Qt.ItemFlag.ItemNeverHasChildren)
             if self.user_sortable:
                 flags |= QtCore.Qt.ItemFlag.ItemIsDragEnabled
             return flags
@@ -255,20 +250,16 @@ class EditableListModel(QtCore.QAbstractListModel):
         else:
             return QtCore.Qt.ItemFlag.NoItemFlags
 
-    def insertRows(self, row, count, parent=None):
-        if parent is None:
-            parent = QtCore.QModelIndex()
+    def insertRows(self, row, count, parent=QtCore.QModelIndex()):
         super().beginInsertRows(parent, row, row + count - 1)
-        for _i in range(count):
+        for i in range(count):
             self._items.insert(row, ("", ""))
         super().endInsertRows()
         return True
 
-    def removeRows(self, row, count, parent=None):
-        if parent is None:
-            parent = QtCore.QModelIndex()
+    def removeRows(self, row, count, parent=QtCore.QModelIndex()):
         super().beginRemoveRows(parent, row, row + count - 1)
-        self._items = self._items[:row] + self._items[row + count :]
+        self._items = self._items[:row] + self._items[row + count:]
         super().endRemoveRows()
         return True
 
@@ -300,7 +291,7 @@ class EditableListModel(QtCore.QAbstractListModel):
 
 class AutocompleteItemDelegate(QtWidgets.QItemDelegate):
     def __init__(self, completions, parent=None):
-        super().__init__(parent=parent)
+        super().__init__(parent)
         self._completions = completions
 
     def createEditor(self, parent, option, index):

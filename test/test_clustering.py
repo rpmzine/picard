@@ -31,6 +31,7 @@ from picard.file import File
 
 
 class TokenizeTest(PicardTestCase):
+
     def test_tokenize(self):
         token = tokenize("")
         self.assertEqual(token, "")
@@ -43,14 +44,13 @@ class TokenizeTest(PicardTestCase):
 
 
 class ClusterTest(PicardTestCase):
+
     def setUp(self):
         super().setUp()
-        self.set_config_values(
-            {
-                'windows_compatibility': False,
-                'va_name': 'Diverse Interpreten',
-            }
-        )
+        self.set_config_values({
+            'windows_compatibility': False,
+            'va_name': 'Diverse Interpreten',
+        })
 
     def _create_file(self, album, artist, filename="foo.mp3"):
         file = File(filename)
@@ -137,6 +137,7 @@ class ClusterTest(PicardTestCase):
 
 
 class FileClusterTest(PicardTestCase):
+
     def test_single(self):
         file = File('foo')
         fc = FileCluster()

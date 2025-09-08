@@ -379,7 +379,7 @@
   </connection>
   <connection>
    <sender>tag_names</sender>
-   <signal>activated(int)</signal>
+   <signal>activated(QString)</signal>
    <receiver>EditTagDialog</receiver>
    <slot>tag_selected()</slot>
    <hints>

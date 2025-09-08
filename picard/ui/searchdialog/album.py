@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2016 Rahul Raturi
+# Copyright (C) 2018-2022 Laurent Monin
 # Copyright (C) 2018-2022 Philipp Wolfer
-# Copyright (C) 2018-2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,17 +23,19 @@
 
 from functools import partial
 
-from PyQt6 import (
+from PyQt5 import (
     QtCore,
     QtGui,
     QtWidgets,
 )
-from PyQt6.QtCore import pyqtSignal
+from PyQt5.QtCore import pyqtSignal
 
 from picard import log
-from picard.config import get_config
+from picard.config import (
+    Option,
+    get_config,
+)
 from picard.const import CAA_URL
-from picard.i18n import N_
 from picard.mbjson import (
     countries_from_node,
     media_formats_from_node,
@@ -44,13 +46,6 @@ from picard.metadata import Metadata
 from picard.util import countries_shortlist
 from picard.webservice.api_helpers import build_lucene_query
 
-from picard.ui.columns import (
-    Column,
-    ColumnAlign,
-    Columns,
-    ColumnSortType,
-    ImageColumn,
-)
 from picard.ui.searchdialog import (
     Retry,
     SearchDialog,
@@ -58,10 +53,11 @@ from picard.ui.searchdialog import (
 
 
 class CoverWidget(QtWidgets.QWidget):
+
     shown = pyqtSignal()
 
-    def __init__(self, size, parent=None):
-        super().__init__(parent=parent)
+    def __init__(self, parent, width=100, height=100):
+        super().__init__(parent)
         self.layout = QtWidgets.QVBoxLayout(self)
         self.destroyed.connect(self.invalidate)
         self.layout.setContentsMargins(0, 0, 0, 0)
@@ -72,7 +68,7 @@ class CoverWidget(QtWidgets.QWidget):
         self.loading_gif_label.setMovie(loading_gif)
         loading_gif.start()
         self.layout.addWidget(self.loading_gif_label)
-        self.__sizehint = self.__size = QtCore.QSize(size, size)
+        self.__sizehint = self.__size = QtCore.QSize(width, height)
         self.setStyleSheet("padding: 0")
 
     def set_pixmap(self, pixmap):
@@ -82,9 +78,8 @@ class CoverWidget(QtWidgets.QWidget):
         if wid:
             wid.widget().deleteLater()
         cover_label = QtWidgets.QLabel(self)
-        pixmap = pixmap.scaled(
-            self.__size, QtCore.Qt.AspectRatioMode.KeepAspectRatio, QtCore.Qt.TransformationMode.SmoothTransformation
-        )
+        pixmap = pixmap.scaled(self.__size, QtCore.Qt.AspectRatioMode.KeepAspectRatio,
+                               QtCore.Qt.TransformationMode.SmoothTransformation)
         self.__sizehint = pixmap.size()
         cover_label.setPixmap(pixmap)
         self.layout.addWidget(cover_label)
@@ -106,25 +101,22 @@ class CoverWidget(QtWidgets.QWidget):
 
 
 class CoverCell:
-    def __init__(self, table, row, column, mbid, size, on_show=None):
-        self.table = table
-        self.row = row
-        self.column = column
-        self.mbid = mbid
-        self.size = size
-        self.on_show = on_show
+
+    def __init__(self, table, release, row, column, on_show=None):
+        self.release = release
         self.fetched = False
         self.fetch_task = None
-        self.widget = CoverWidget(self.size)
+        self.widget = widget = CoverWidget(table)
         self.widget.destroyed.connect(self.invalidate)
-        if self.on_show is not None:
-            self.widget.shown.connect(partial(self.on_show, self))
-        self.table.setCellWidget(row, column, self.widget)
+        if on_show is not None:
+            widget.shown.connect(partial(on_show, self))
+        table.setCellWidget(row, column, widget)
 
     def is_visible(self):
         if self.widget:
-            return self.table.cell_is_visible(self.row, self.column)
-        return False
+            return not self.widget.visibleRegion().isEmpty()
+        else:
+            return False
 
     def set_pixmap(self, pixmap):
         if self.widget:
@@ -138,82 +130,65 @@ class CoverCell:
         if self.widget:
             self.widget = None
 
-    def __repr__(self):
-        return ("{c}({o.table!r}, {o.row!r}, {o.column!r}, {o.mbid!r}, {o.size!r}, on_show={o.on_show!r})").format(
-            c=self.__class__.__name__, o=self
-        )
-
-
-class CoverColumn(ImageColumn):
-    pass
-
 
 class AlbumSearchDialog(SearchDialog):
+
     dialog_header_state = 'albumsearchdialog_header_state'
 
+    options = [
+        Option('persist', dialog_header_state, QtCore.QByteArray())
+    ]
+
     def __init__(self, parent, force_advanced_search=None, existing_album=None):
-        self.columns = Columns(
-            (
-                Column(N_("Name"), 'album', sort_type=ColumnSortType.NAT, width=150),
-                Column(N_("Comment"), '~releasecomment'),
-                Column(N_("Artist"), 'albumartist'),
-                Column(N_("Format"), 'format'),
-                Column(N_("Tracks"), 'tracks', sort_type=ColumnSortType.NAT, align=ColumnAlign.RIGHT),
-                Column(N_("Date"), 'date'),
-                Column(N_("Country"), 'country'),
-                Column(N_("Labels"), 'label'),
-                Column(N_("Catalog #s"), 'catalognumber', sort_type=ColumnSortType.NAT),
-                Column(N_("Barcode"), 'barcode', sort_type=ColumnSortType.NAT),
-                Column(N_("Language"), '~releaselanguage'),
-                Column(N_("Type"), 'releasetype'),
-                Column(N_("Status"), 'releasestatus'),
-                CoverColumn(N_("Cover"), 'cover', width=100),
-                Column(N_("Score"), 'score', sort_type=ColumnSortType.NAT, align=ColumnAlign.RIGHT, width=50),
-            ),
-            default_width=100,
-        )
         super().__init__(
             parent,
-            N_("Album Search Results"),
-            accept_button_title=N_("Load into Picard"),
+            accept_button_title=_("Load into Picard"),
             search_type='album',
-            force_advanced_search=force_advanced_search,
-        )
+            force_advanced_search=force_advanced_search)
         self.cluster = None
         self.existing_album = existing_album
+        self.setWindowTitle(_("Album Search Results"))
+        self.columns = [
+            ('name',     _("Name")),
+            ('artist',   _("Artist")),
+            ('format',   _("Format")),
+            ('tracks',   _("Tracks")),
+            ('date',     _("Date")),
+            ('country',  _("Country")),
+            ('labels',   _("Labels")),
+            ('catnums',  _("Catalog #s")),
+            ('barcode',  _("Barcode")),
+            ('language', _("Language")),
+            ('type',     _("Type")),
+            ('status',   _("Status")),
+            ('cover',    _("Cover")),
+            ('score',    _("Score")),
+        ]
         self.cover_cells = []
         self.fetching = False
         self.scrolled.connect(self.fetch_coverarts)
-        self.resized.connect(self.fetch_coverarts)
 
     @staticmethod
     def show_releasegroup_search(releasegroup_id, existing_album=None):
-        tagger = QtCore.QCoreApplication.instance()
         dialog = AlbumSearchDialog(
-            tagger.window,
+            QtCore.QObject.tagger.window,
             force_advanced_search=True,
-            existing_album=existing_album,
-        )
+            existing_album=existing_album)
         dialog.search("rgid:{0}".format(releasegroup_id))
-        dialog.exec()
+        dialog.exec_()
         return dialog
 
     def search(self, text):
         """Perform search using query provided by the user."""
-        if self.fetching:
-            self.fetch_cleanup()
-            self.fetching = False
         self.retry_params = Retry(self.search, text)
         self.search_box_text(text)
         self.show_progress()
         config = get_config()
-        self.tagger.mb_api.find_releases(
-            self.handle_reply,
-            query=text,
-            search=True,
-            advanced_search=self.use_advanced_search,
-            limit=config.setting['query_limit'],
-        )
+        self.tagger.mb_api.find_releases(self.handle_reply,
+                                         query=text,
+                                         search=True,
+                                         advanced_search=self.use_advanced_search,
+                                         limit=config.setting['query_limit'])
 
     def show_similar_albums(self, cluster):
         """Perform search by using existing metadata information
@@ -223,7 +198,7 @@ class AlbumSearchDialog(SearchDialog):
         query = {
             "artist": metadata["albumartist"],
             "release": metadata["album"],
-            "tracks": str(len(cluster.files)),
+            "tracks": str(len(cluster.files))
         }
 
         # If advanced query syntax setting is enabled by user, query in
@@ -269,10 +244,10 @@ class AlbumSearchDialog(SearchDialog):
             return
         if not cell.is_visible():
             return
-        log.debug("Fetching cover art for row %d: release %s", cell.row + 1, cell.mbid)
         cell.fetched = True
+        mbid = cell.release['musicbrainz_albumid']
         cell.fetch_task = self.tagger.webservice.get_url(
-            url=f'{CAA_URL}/release/{cell.mbid}',
+            url=f'{CAA_URL}/release/{mbid}',
             handler=partial(self._caa_json_downloaded, cell),
         )
 
@@ -297,7 +272,7 @@ class AlbumSearchDialog(SearchDialog):
             if front:
                 cover_cell.fetch_task = self.tagger.webservice.download_url(
                     url=front['thumbnails']['small'],
-                    handler=partial(self._cover_downloaded, cover_cell),
+                    handler=partial(self._cover_downloaded, cover_cell)
                 )
             else:
                 cover_cell.not_found()
@@ -329,9 +304,9 @@ class AlbumSearchDialog(SearchDialog):
     def fetch_cleanup(self):
         for cell in self.cover_cells:
             if cell.fetch_task is not None:
-                log.debug("Removing cover art fetch task for %s", cell.mbid)
+                log.debug("Removing cover art fetch task for %s",
+                          cell.release['musicbrainz_albumid'])
                 self.tagger.webservice.remove_task(cell.fetch_task)
-                cell.fetch_task = None
 
     def closeEvent(self, event):
         if self.cover_cells:
@@ -357,26 +332,24 @@ class AlbumSearchDialog(SearchDialog):
     def display_results(self):
         self.prepare_table()
         self.cover_cells = []
-        cover_pos = self.columns.pos('cover')
-        cover_size = self.columns[cover_pos].width
-        vheader = self.table.verticalHeader()
-        vheader.setDefaultSectionSize(cover_size)
+        column = self.colpos('cover')
         for row, release in enumerate(self.search_results):
             self.table.insertRow(row)
-            for pos, c in enumerate(self.columns):
-                if isinstance(c, CoverColumn):
-                    self.cover_cells.append(
-                        CoverCell(
-                            self.table,
-                            row,
-                            pos,
-                            release['musicbrainz_albumid'],
-                            cover_size,
-                            on_show=self.fetch_coverart,
-                        )
-                    )
-                else:
-                    self.set_table_item_value(row, pos, c, release)
+            self.set_table_item(row, 'name',     release, 'album')
+            self.set_table_item(row, 'artist',   release, 'albumartist')
+            self.set_table_item(row, 'format',   release, 'format')
+            self.set_table_item(row, 'tracks',   release, 'tracks')
+            self.set_table_item(row, 'date',     release, 'date')
+            self.set_table_item(row, 'country',  release, 'country')
+            self.set_table_item(row, 'labels',   release, 'label')
+            self.set_table_item(row, 'catnums',  release, 'catalognumber')
+            self.set_table_item(row, 'barcode',  release, 'barcode')
+            self.set_table_item(row, 'language', release, '~releaselanguage')
+            self.set_table_item(row, 'type',     release, 'releasetype')
+            self.set_table_item(row, 'status',   release, 'releasestatus')
+            self.set_table_item(row, 'score',    release, 'score')
+            self.cover_cells.append(CoverCell(self.table, release, row, column,
+                                              on_show=self.fetch_coverart))
             if self.existing_album and release['musicbrainz_albumid'] == self.existing_album.id:
                 self.highlight_row(row)
         self.show_table(sort_column='score')
@@ -391,7 +364,9 @@ class AlbumSearchDialog(SearchDialog):
         if self.existing_album:
             self.existing_album.switch_release_version(release_mbid)
         else:
-            self.tagger.get_release_group_by_id(release['musicbrainz_releasegroupid']).loaded_albums.add(release_mbid)
+            self.tagger.get_release_group_by_id(
+                release['musicbrainz_releasegroupid']).loaded_albums.add(
+                    release_mbid)
             album = self.tagger.load_album(release_mbid)
             if self.cluster:
                 files = self.cluster.iterfiles()
