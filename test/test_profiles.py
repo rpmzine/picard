@@ -2,9 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2021, 2023, 2025 Bob Swift
+# Copyright (C) 2021 Bob Swift
 # Copyright (C) 2022 Philipp Wolfer
-# Copyright (C) 2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -36,18 +35,11 @@ from picard.config import (
     SettingConfigSection,
     TextOption,
 )
-from picard.profile import (
-    profile_groups_add_setting,
-    profile_groups_all_settings,
-    profile_groups_keys,
-    profile_groups_order,
-    profile_groups_reset,
-    profile_groups_settings,
-    profile_groups_values,
-)
+from picard.profile import UserProfileGroups
 
 
 class TestPicardProfilesCommon(PicardTestCase):
+
     PROFILES_KEY = SettingConfigSection.PROFILES_KEY
     SETTINGS_KEY = SettingConfigSection.SETTINGS_KEY
 
@@ -65,21 +57,13 @@ class TestPicardProfilesCommon(PicardTestCase):
 
         self.config.application["version"] = "testing"
         logging.disable(logging.ERROR)
-        self.old_registry = dict(Option.registry)
         Option.registry = {}
 
         ListOption('profiles', self.PROFILES_KEY, [])
         Option('profiles', self.SETTINGS_KEY, {})
 
         # Get valid profile option settings for testing
-        profile_groups_reset()
-        for n in range(0, 4):
-            group = 'group%d' % (n % 2)
-            title = 'title_' + group
-            name = 'opt%d' % n
-            highlights = ('obj%d' % i for i in range(0, n))
-            profile_groups_add_setting(group, name, highlights, title=title)
-        option_settings = list(profile_groups_all_settings())
+        option_settings = list(UserProfileGroups.ALL_SETTINGS)
         self.test_setting_0 = option_settings[0]
         self.test_setting_1 = option_settings[1]
         self.test_setting_2 = option_settings[2]
@@ -89,9 +73,6 @@ class TestPicardProfilesCommon(PicardTestCase):
         BoolOption("setting", self.test_setting_1, True)
         IntOption("setting", self.test_setting_2, 42)
         TextOption("setting", self.test_setting_3, "xyz")
-
-    def tearDown(self):
-        Option.registry = self.old_registry
 
     def cleanup_config_obj(self):
         # Ensure QSettings do not recreate the file on exit
@@ -113,51 +94,41 @@ class TestPicardProfilesCommon(PicardTestCase):
         return profiles
 
 
-class TestUserProfileGroups(TestPicardProfilesCommon):
+class TestUserProfileGroups(PicardTestCase):
+
     def test_has_groups(self):
-        groups = list(profile_groups_keys())
-        self.assertEqual(groups, ['group0', 'group1'])
+        keys = list(UserProfileGroups.get_setting_groups_list())
+        self.assertNotEqual(keys, [])
 
     def test_groups_have_items(self):
-        for group in profile_groups_keys():
-            settings = profile_groups_settings(group)
+        for key in UserProfileGroups.get_setting_groups_list():
+            settings = UserProfileGroups.SETTINGS_GROUPS[key]["settings"]
             self.assertNotEqual(settings, {})
 
     def test_no_duplicate_settings(self):
         count1 = 0
-        for group in profile_groups_keys():
-            settings = profile_groups_settings(group)
-            count1 += len(list(settings))
-        count2 = len(list(profile_groups_all_settings()))
+        for key in UserProfileGroups.get_setting_groups_list():
+            settings = UserProfileGroups.SETTINGS_GROUPS[key]["settings"]
+            count1 += len(settings)
+        count2 = len(UserProfileGroups.ALL_SETTINGS)
         self.assertEqual(count1, count2)
 
     def test_settings_have_no_blank_keys(self):
-        for group in profile_groups_keys():
-            settings = profile_groups_settings(group)
-            for name, _highlights in settings:
-                self.assertNotEqual(name.strip(), "")
+        for key in UserProfileGroups.get_setting_groups_list():
+            settings = UserProfileGroups.SETTINGS_GROUPS[key]["settings"]
+            for key, title, fields in settings:
+                self.assertNotEqual(key.strip(), "")
 
-    def test_groups_have_title(self):
-        for value in profile_groups_values():
-            self.assertTrue(value['title'].startswith('title_'))
-
-    def test_groups_have_highlights(self):
-        for group in profile_groups_keys():
-            for setting in profile_groups_settings(group):
-                self.assertIsNotNone(setting.highlights)
-
-    def test_order(self):
-        result_before = [value['title'] for value in profile_groups_values()]
-        self.assertEqual(result_before, ['title_group0', 'title_group1'])
-
-        profile_groups_order('group1')
-        profile_groups_order('group0')
-
-        result_after = [value['title'] for value in profile_groups_values()]
-        self.assertEqual(result_after, ['title_group1', 'title_group0'])
+    def test_settings_have_titles(self):
+        for key in UserProfileGroups.get_setting_groups_list():
+            settings = UserProfileGroups.SETTINGS_GROUPS[key]["settings"]
+            self.assertNotEqual(settings, {})
+            for key, title, fields in settings:
+                self.assertNotEqual(title.strip(), "")
 
 
 class TestUserProfiles(TestPicardProfilesCommon):
+
     def test_settings(self):
         self.config.setting[self.test_setting_0] = "abc"
         self.config.setting[self.test_setting_1] = True
@@ -338,7 +309,6 @@ class TestUserProfiles(TestPicardProfilesCommon):
 
     def test_config_option_rename(self):
         from picard.config_upgrade import rename_option
-
         self.config.setting[self.test_setting_0] = "abc"
         self.config.setting[self.test_setting_1] = True
         self.config.setting[self.test_setting_2] = 42

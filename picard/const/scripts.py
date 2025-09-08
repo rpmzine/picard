@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2021 Bob Swift
 # Copyright (C) 2021 Vladislav Karbovskii
-# Copyright (C) 2021-2024 Laurent Monin
+# Copyright (C) 2021-2022 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -21,12 +21,6 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from picard.i18n import (
-    N_,
-    gettext as _,
-)
-
-
 # List of available scripts (character sets)
 SCRIPTS = {
     'GREEK': N_('Greek'),
@@ -38,7 +32,7 @@ SCRIPTS = {
     'HANGUL': N_('Hangul'),
     'HIRAGANA': N_('Hiragana'),
     'KATAKANA': N_('Katakana'),
-    'THAI': N_('Thai'),
+    'THAI': N_('Thai')
 }
 
 

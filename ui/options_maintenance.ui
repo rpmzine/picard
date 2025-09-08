@@ -14,7 +14,7 @@
    <item>
     <widget class="QLabel" name="label">
      <property name="text">
-      <string>Configuration file:</string>
+      <string>Configuration File:</string>
      </property>
     </widget>
    </item>
@@ -32,41 +32,8 @@
      </item>
      <item>
       <widget class="QToolButton" name="open_folder_button">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
        <property name="text">
-        <string>Open folder…</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <widget class="QLabel" name="label_2">
-     <property name="text">
-      <string>Automatic configuration backups directory:</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_6">
-     <item>
-      <widget class="QLineEdit" name="autobackup_dir"/>
-     </item>
-     <item>
-      <widget class="QToolButton" name="browse_autobackup_dir">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <property name="text">
-        <string>Browse…</string>
+        <string>Open folder</string>
        </property>
       </widget>
      </item>
@@ -92,38 +59,19 @@
      </item>
      <item>
       <widget class="QToolButton" name="load_backup_button">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
        <property name="text">
-        <string>Load backup…</string>
+        <string>Load Backup</string>
        </property>
       </widget>
      </item>
      <item>
       <widget class="QToolButton" name="save_backup_button">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
        <property name="text">
-        <string>Save backup…</string>
+        <string>Save Backup</string>
        </property>
       </widget>
      </item>
     </layout>
-   </item>
-   <item>
-    <widget class="Line" name="line_2">
-     <property name="orientation">
-      <enum>Qt::Horizontal</enum>
-     </property>
-    </widget>
    </item>
    <item>
     <widget class="QLabel" name="option_counts">
@@ -135,6 +83,13 @@
      </property>
      <property name="text">
       <string/>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="enable_cleanup">
+     <property name="text">
+      <string>Remove selected options</string>
      </property>
     </widget>
    </item>
@@ -178,38 +133,11 @@
     </widget>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_2">
-     <property name="topMargin">
-      <number>0</number>
+    <widget class="QCheckBox" name="select_all">
+     <property name="text">
+      <string>Select all</string>
      </property>
-     <item>
-      <widget class="QCheckBox" name="select_all">
-       <property name="text">
-        <string>Select all</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <spacer name="horizontalSpacer_2">
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QCheckBox" name="enable_cleanup">
-       <property name="text">
-        <string>Remove selected options</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
+    </widget>
    </item>
    <item>
     <widget class="QTableWidget" name="tableWidget">
@@ -234,17 +162,6 @@
    </item>
   </layout>
  </widget>
- <tabstops>
-  <tabstop>config_file</tabstop>
-  <tabstop>open_folder_button</tabstop>
-  <tabstop>autobackup_dir</tabstop>
-  <tabstop>browse_autobackup_dir</tabstop>
-  <tabstop>load_backup_button</tabstop>
-  <tabstop>save_backup_button</tabstop>
-  <tabstop>select_all</tabstop>
-  <tabstop>enable_cleanup</tabstop>
-  <tabstop>tableWidget</tabstop>
- </tabstops>
  <resources/>
  <connections/>
 </ui>

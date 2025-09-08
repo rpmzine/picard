@@ -4,8 +4,8 @@
 #
 # Copyright (C) 2011-2012 Lukáš Lalinský
 # Copyright (C) 2011-2013 Michael Wiencek
-# Copyright (C) 2013, 2018, 2020-2024 Laurent Monin
-# Copyright (C) 2015, 2020-2023, 2025 Philipp Wolfer
+# Copyright (C) 2013, 2018, 2020-2022 Laurent Monin
+# Copyright (C) 2015, 2020-2022 Philipp Wolfer
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2023 Bob Swift
 #
@@ -26,37 +26,39 @@
 
 import os
 
-from PyQt6 import (
+from PyQt5 import (
     QtCore,
     QtGui,
+    QtWidgets,
 )
 
 from picard.acoustid import find_fpcalc
-from picard.config import get_config
-from picard.extension_points.options_pages import register_options_page
-from picard.i18n import (
-    N_,
-    gettext as _,
+from picard.config import (
+    BoolOption,
+    IntOption,
+    TextOption,
+    get_config,
 )
+from picard.const import DEFAULT_FPCALC_THREADS
 from picard.util import webbrowser2
 
-from picard.ui.forms.ui_options_fingerprinting import (
-    Ui_FingerprintingOptionsPage,
-)
 from picard.ui.options import (
     OptionsCheckError,
     OptionsPage,
+    register_options_page,
 )
-from picard.ui.util import FileDialog
+from picard.ui.ui_options_fingerprinting import Ui_FingerprintingOptionsPage
 
 
 class ApiKeyValidator(QtGui.QValidator):
+
     def validate(self, input, pos):
         # Strip whitespace to avoid typical copy and paste user errors
         return (QtGui.QValidator.State.Acceptable, input.strip(), pos)
 
 
 class FingerprintingOptionsPage(OptionsPage):
+
     NAME = 'fingerprinting'
     TITLE = N_("Fingerprinting")
     PARENT = None
@@ -64,17 +66,17 @@ class FingerprintingOptionsPage(OptionsPage):
     ACTIVE = True
     HELP_URL = "/config/options_fingerprinting.html"
 
-    OPTIONS = (
-        ('fingerprinting_system', None),
-        ('acoustid_fpcalc', None),
-        ('acoustid_apikey', None),
-        ('ignore_existing_acoustid_fingerprints', None),
-        ('save_acoustid_fingerprints', None),
-        ('fpcalc_threads', None),
-    )
+    options = [
+        BoolOption('setting', 'ignore_existing_acoustid_fingerprints', False),
+        BoolOption('setting', 'save_acoustid_fingerprints', False),
+        TextOption('setting', 'fingerprinting_system', 'acoustid'),
+        TextOption('setting', 'acoustid_fpcalc', ''),
+        TextOption('setting', 'acoustid_apikey', ''),
+        IntOption('setting', 'fpcalc_threads', DEFAULT_FPCALC_THREADS),
+    ]
 
     def __init__(self, parent=None):
-        super().__init__(parent=parent)
+        super().__init__(parent)
         self._fpcalc_valid = True
         self.ui = Ui_FingerprintingOptionsPage()
         self.ui.setupUi(self)
@@ -95,9 +97,7 @@ class FingerprintingOptionsPage(OptionsPage):
         self.ui.acoustid_fpcalc.setPlaceholderText(find_fpcalc())
         self.ui.acoustid_fpcalc.setText(config.setting['acoustid_fpcalc'])
         self.ui.acoustid_apikey.setText(config.setting['acoustid_apikey'])
-        self.ui.ignore_existing_acoustid_fingerprints.setChecked(
-            config.setting['ignore_existing_acoustid_fingerprints']
-        )
+        self.ui.ignore_existing_acoustid_fingerprints.setChecked(config.setting['ignore_existing_acoustid_fingerprints'])
         self.ui.save_acoustid_fingerprints.setChecked(config.setting['save_acoustid_fingerprints'])
         self.ui.fpcalc_threads.setValue(config.setting['fpcalc_threads'])
         self.update_groupboxes()
@@ -110,9 +110,7 @@ class FingerprintingOptionsPage(OptionsPage):
             config.setting['fingerprinting_system'] = ''
         config.setting['acoustid_fpcalc'] = self.ui.acoustid_fpcalc.text()
         config.setting['acoustid_apikey'] = self.ui.acoustid_apikey.text()
-        config.setting['ignore_existing_acoustid_fingerprints'] = (
-            self.ui.ignore_existing_acoustid_fingerprints.isChecked()
-        )
+        config.setting['ignore_existing_acoustid_fingerprints'] = self.ui.ignore_existing_acoustid_fingerprints.isChecked()
         config.setting['save_acoustid_fingerprints'] = self.ui.save_acoustid_fingerprints.isChecked()
         config.setting['fpcalc_threads'] = self.ui.fpcalc_threads.value()
 
@@ -124,10 +122,7 @@ class FingerprintingOptionsPage(OptionsPage):
         self._acoustid_fpcalc_check()
 
     def acoustid_fpcalc_browse(self):
-        path, _filter = FileDialog.getOpenFileName(
-            parent=self,
-            dir=self.ui.acoustid_fpcalc.text(),
-        )
+        path, _filter = QtWidgets.QFileDialog.getOpenFileName(self, "", self.ui.acoustid_fpcalc.text())
         if path:
             path = os.path.normpath(path)
             self.ui.acoustid_fpcalc.setText(path)
@@ -148,12 +143,12 @@ class FingerprintingOptionsPage(OptionsPage):
         self._fpcalc_valid = False
         process = QtCore.QProcess(self)
         process.finished.connect(self._on_acoustid_fpcalc_check_finished)
-        process.errorOccurred.connect(self._on_acoustid_fpcalc_check_error)
+        process.error.connect(self._on_acoustid_fpcalc_check_error)
         process.start(fpcalc, ["-v"])
 
     def _on_acoustid_fpcalc_check_finished(self, exit_code, exit_status):
         process = self.sender()
-        if exit_code == 0 and exit_status == QtCore.QProcess.ExitStatus.NormalExit:
+        if exit_code == 0 and exit_status == 0:
             output = bytes(process.readAllStandardOutput()).decode()
             if output.startswith("fpcalc version"):
                 self._acoustid_fpcalc_set_success(output.strip())

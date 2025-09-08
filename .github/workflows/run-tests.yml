@@ -9,14 +9,14 @@ jobs:
     strategy:
       matrix:
         os: [macos-13, ubuntu-latest, windows-2022]
-        python-version: ['3.10', '3.11', '3.12', '>=3.13.5 <3.14', '3.14.0-beta.3']
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '>=3.13.5 <3.14', '3.14.0-beta.2']
         exclude:
         # FIXME: Python 3.14 builds on Windows and macOS excluded until
         # pywin32 and pyobjc add support for this new version.
         - os: macos-13
-          python-version: '3.14.0-beta.3'
+          python-version: '3.14.0-beta.2'
         - os: windows-2022
-          python-version: '3.14.0-beta.3'
+          python-version: '3.14.0-beta.2'
     env:
       CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
 
@@ -27,11 +27,6 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
-    - name: Install dependencies (Linux)
-      if: runner.os == 'linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install libegl1
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
@@ -42,13 +37,34 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install gettext
+    - name: Install gettext (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install gettext
+        brew link gettext --force
+        echo "/usr/local/opt/gettext/bin" >> $GITHUB_PATH
+    - name: Check coding style
+      run: |
+        pip install flake8 "isort>=5"
+        flake8 picard test --count --show-source --statistics
+        isort --check-only --diff --recursive picard test
     - name: Test with pytest
       if: always()
       timeout-minutes: 30
       run: |
-        python setup.py build_locales
+        python setup.py build_locales -i
         pip install pytest pytest-randomly pytest-cov
         pytest --verbose --cov=picard --cov-report xml:coverage.xml test
+    - name: Test python-libdiscid (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install libdiscid-dev
+        python -c "from picard.disc import discid_version; print(discid_version)"
+        pytest --verbose test/test_disc.py
+        pip install python-libdiscid
+        python -c "from picard.disc import discid_version; print(discid_version)"
+        pytest --verbose test/test_disc.py
     - name: Submit code coverage to Codacy
       if: env.CODACY_PROJECT_TOKEN
       run: |
@@ -60,13 +76,13 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.10']
+        python-version: ['3.8']
         dependencies: [
-          "PyQt6==6.5.3 PyQt6-Qt6==6.5.3 mutagen==1.45 python-dateutil==2.7 PyYAML==5.1",  # minimal versions, minimum dependencies
-          "PyQt6>=6.5.3 mutagen~=1.45 python-dateutil~=2.7 PyYAML~=6.0 discid==1.0",
-          "PyQt6>=6.5.3 mutagen~=1.45 python-dateutil~=2.7 PyYAML~=6.0 python-libdiscid",
-          "PyQt6>=6.5.3 mutagen~=1.45 python-dateutil~=2.7 PyYAML~=6.0 charset-normalizer==2.0.6",
-          "PyQt6>=6.5.3 mutagen~=1.45 python-dateutil~=2.7 PyYAML~=6.0 chardet==3.0.4",
+          "PyQt5==5.15.11",
+          "PyQt5==5.14.2",
+          "PyQt5==5.13.2",
+          "PyQt5==5.12.3",
+          "PyQt5==5.11.3 mutagen==1.37",
         ]
 
     steps:
@@ -75,15 +91,11 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install dependencies (Linux)
-      if: runner.os == 'linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install libdiscid-dev libegl1
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install $DEPENDENCIES
+        pip install -r requirements.txt
       env:
         DEPENDENCIES: ${{ matrix.dependencies }}
     - name: Test with pytest
@@ -97,7 +109,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-13, ubuntu-latest, windows-latest]
-        python-version: ['3.10', '>=3.13.5 <3.14']
+        python-version: ['3.8', '>=3.13.5 <3.14']
 
     steps:
     - uses: actions/checkout@v4
@@ -105,11 +117,17 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install gettext and libegl1 (Linux)
+    - name: Install gettext (Linux)
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
-        sudo apt-get install gettext libegl1
+        sudo apt-get install gettext
+    - name: Install gettext (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install gettext
+        brew link gettext --force
+        echo "/usr/local/opt/gettext/bin" >> $GITHUB_PATH
     - name: Install gettext (Windows)
       if: runner.os == 'Windows'
       run: |
@@ -122,7 +140,7 @@ jobs:
     - name: Run pip install .
       run: |
         python -m pip install --upgrade pip
-        pip install --verbose .
+        pip install .
     - name: Test running installed package
       if: runner.os != 'Windows'
       run: picard --long-version --no-crash-dialog
@@ -130,5 +148,6 @@ jobs:
       if: runner.os != 'Windows'
       timeout-minutes: 30
       run: |
-        pip install build pytest
+        pip install --upgrade setuptools
+        pip install pytest
         scripts/package/run-sdist-test.sh

@@ -9,12 +9,11 @@
 # Copyright (C) 2012-2013 Michael Wiencek
 # Copyright (C) 2013 Calvin Walton
 # Copyright (C) 2013 Frederik “Freso” S. Olesen
-# Copyright (C) 2013-2014, 2018-2024 Laurent Monin
+# Copyright (C) 2013-2014, 2018-2022 Laurent Monin
 # Copyright (C) 2014-2015 Sophist-UK
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2019 Reinaldo Antonio Camargo Rauch
 # Copyright (C) 2023 certuna
-# Copyright (C) 2024 Giorgio Fontanive
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -56,7 +55,7 @@ def _add_text_values_to_metadata(metadata, name, values):
 
 
 _VALID_KEY_CHARS = re.compile('^[\x00-\xff]+$')
-UNSUPPORTED_TAGS = {'syncedlyrics', 'r128_album_gain', 'r128_track_gain'}
+UNSUPPORTED_TAGS = {'r128_album_gain', 'r128_track_gain'}
 
 
 def _is_valid_key(key):
@@ -170,7 +169,8 @@ class MP4File(File):
     }
     __freeform_tags_ci = {b.lower(): a for a, b in __r_freeform_tags_ci.items()}
 
-    __other_supported_tags = ('discnumber', 'tracknumber', 'totaldiscs', 'totaltracks')
+    __other_supported_tags = ('discnumber', 'tracknumber',
+                              'totaldiscs', 'totaltracks')
 
     def __init__(self, filename):
         super().__init__(filename)
@@ -234,14 +234,12 @@ class MP4File(File):
             elif name.startswith('----:com.apple.iTunes:'):
                 tag_name = name_lower[22:]
                 self.__casemap[tag_name] = name[22:]
-                if (
-                    name not in self.__r_text_tags
+                if (name not in self.__r_text_tags
                     and name not in self.__r_bool_tags
                     and name not in self.__r_int_tags
                     and name not in self.__r_freeform_tags
                     and name_lower not in self.__r_freeform_tags_ci
-                    and name not in self.__other_supported_tags
-                ):
+                    and name not in self.__other_supported_tags):
                     _add_text_values_to_metadata(metadata, tag_name, values)
 
         self._info(metadata, file)
@@ -281,7 +279,7 @@ class MP4File(File):
             elif name in self.__r_text_tags:
                 tags[self.__r_text_tags[name]] = values
             elif name in self.__r_bool_tags:
-                tags[self.__r_bool_tags[name]] = values[0] == '1'
+                tags[self.__r_bool_tags[name]] = (values[0] == '1')
             elif name in self.__r_int_tags:
                 try:
                     tags[self.__r_int_tags[name]] = [int(value) for value in values]
@@ -291,9 +289,7 @@ class MP4File(File):
                 values = [v.encode('utf-8') for v in values]
                 tags[self.__r_freeform_tags[name]] = values
             elif name == 'musicip_fingerprint':
-                tags['----:com.apple.iTunes:fingerprint'] = [
-                    b'MusicMagic Fingerprint%s' % v.encode('ascii') for v in values
-                ]
+                tags['----:com.apple.iTunes:fingerprint'] = [b'MusicMagic Fingerprint%s' % v.encode('ascii') for v in values]
             elif self.supports_tag(name) and name not in self.__other_supported_tags:
                 values = [v.encode('utf-8') for v in values]
                 name = self.__casemap.get(name, name)
@@ -350,14 +346,12 @@ class MP4File(File):
 
     @classmethod
     def supports_tag(cls, name):
-        return (
-            name
-            and not name.startswith('~')
-            and name not in UNSUPPORTED_TAGS
-            and not (name.startswith('comment:') and len(name) > 9)
-            and not name.startswith('performer:')
-            and _is_valid_key(name)
-        )
+        return (name
+                and not name.startswith('~')
+                and name not in UNSUPPORTED_TAGS
+                and not (name.startswith('comment:') and len(name) > 9)
+                and not name.startswith('performer:')
+                and _is_valid_key(name))
 
     def _get_tag_name(self, name):
         if name.startswith('lyrics:'):

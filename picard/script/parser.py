@@ -11,7 +11,7 @@
 # Copyright (C) 2012 Chad Wilson
 # Copyright (C) 2012 stephen
 # Copyright (C) 2012, 2014, 2017 Wieland Hoffmann
-# Copyright (C) 2013-2014, 2017-2021, 2023-2024 Laurent Monin
+# Copyright (C) 2013-2014, 2017-2021 Laurent Monin
 # Copyright (C) 2014, 2017 Sophist-UK
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2016-2017 Ville Skyttä
@@ -38,11 +38,11 @@
 from collections.abc import MutableSequence
 from queue import LifoQueue
 
-from picard.extension_points import script_functions
 from picard.metadata import (
     MULTI_VALUED_JOINER,
     Metadata,
 )
+from picard.plugin import ExtensionPoint
 
 
 class ScriptError(Exception):
@@ -54,7 +54,7 @@ class ScriptParseError(ScriptError):
         super().__init__(
             "{prefix:s}: {message:s}".format(
                 prefix=str(stackitem),
-                message=message,
+                message=message
             )
         )
 
@@ -63,7 +63,7 @@ class ScriptEndOfFile(ScriptParseError):
     def __init__(self, stackitem):
         super().__init__(
             stackitem,
-            "Unexpected end of script",
+            "Unexpected end of script"
         )
 
 
@@ -79,7 +79,7 @@ class ScriptUnknownFunction(ScriptParseError):
     def __init__(self, stackitem):
         super().__init__(
             stackitem,
-            "Unknown function '{name}'".format(name=stackitem.name),
+            "Unknown function '{name}'".format(name=stackitem.name)
         )
 
 
@@ -88,8 +88,8 @@ class ScriptRuntimeError(ScriptError):
         super().__init__(
             "{prefix:s}: {message:s}".format(
                 prefix=str(stackitem),
-                message=message,
-            ),
+                message=message
+            )
         )
 
 
@@ -104,12 +104,20 @@ class StackItem:
 
     def __str__(self):
         if self.name is None:
-            return f"{self.line:d}:{self.column:d}"
+            return "{line:d}:{column:d}".format(
+                line=self.line,
+                column=self.column
+            )
         else:
-            return f"{self.line:d}:{self.column:d}:{self.name}"
+            return "{line:d}:{column:d}:{name}".format(
+                line=self.line,
+                column=self.column,
+                name=self.name
+            )
 
 
 class ScriptText(str):
+
     def eval(self, state):
         return self
 
@@ -120,7 +128,8 @@ def normalize_tagname(name):
     return name
 
 
-class ScriptVariable:
+class ScriptVariable(object):
+
     def __init__(self, name):
         self.name = name
 
@@ -131,7 +140,8 @@ class ScriptVariable:
         return state.context.get(normalize_tagname(self.name), "")
 
 
-class ScriptFunction:
+class ScriptFunction(object):
+
     def __init__(self, name, args, parser, column=0, line=0):
         self.stackitem = StackItem(line, column, name)
         try:
@@ -152,10 +162,11 @@ class ScriptFunction:
                 if too_few_args or too_many_args:
                     raise ScriptSyntaxError(
                         self.stackitem,
-                        "Wrong number of arguments for $%s: Expected %s, got %i" % (name, expected, argcount),
+                        "Wrong number of arguments for $%s: Expected %s, got %i"
+                        % (name, expected, argcount)
                     )
         except KeyError:
-            raise ScriptUnknownFunction(self.stackitem) from None
+            raise ScriptUnknownFunction(self.stackitem)
 
         self.name = name
         self.args = args
@@ -167,7 +178,7 @@ class ScriptFunction:
         try:
             function_registry_item = parser.functions[self.name]
         except KeyError:
-            raise ScriptUnknownFunction(self.stackitem) from None
+            raise ScriptUnknownFunction(self.stackitem)
 
         if function_registry_item.eval_args:
             args = [arg.eval(parser) for arg in self.args]
@@ -181,6 +192,7 @@ class ScriptFunction:
 
 
 class ScriptExpression(list):
+
     def eval(self, state):
         return "".join(item.eval(state) for item in self)
 
@@ -189,20 +201,22 @@ def isidentif(ch):
     return ch.isalnum() or ch == '_'
 
 
-class ScriptParser:
+class ScriptParser(object):
+
     r"""Tagger script parser.
 
-    Grammar:
-      unicodechar ::= '\u' [a-fA-F0-9]{4}
-      text        ::= [^$%] | '\$' | '\%' | '\(' | '\)' | '\,' | unicodechar
-      argtext     ::= [^$%(),] | '\$' | '\%' | '\(' | '\)' | '\,' | unicodechar
-      identifier  ::= [a-zA-Z0-9_]
-      variable    ::= '%' (identifier | ':')+ '%'
-      function    ::= '$' (identifier)+ '(' (argument (',' argument)*)? ')'
-      expression  ::= (variable | function | text)*
-      argument    ::= (variable | function | argtext)*
-    """
+Grammar:
+  unicodechar ::= '\u' [a-fA-F0-9]{4}
+  text        ::= [^$%] | '\$' | '\%' | '\(' | '\)' | '\,' | unicodechar
+  argtext     ::= [^$%(),] | '\$' | '\%' | '\(' | '\)' | '\,' | unicodechar
+  identifier  ::= [a-zA-Z0-9_]
+  variable    ::= '%' (identifier | ':')+ '%'
+  function    ::= '$' (identifier)+ '(' (argument (',' argument)*)? ')'
+  expression  ::= (variable | function | text)*
+  argument    ::= (variable | function | argtext)*
+"""
 
+    _function_registry = ExtensionPoint(label='function_registry')
     _cache = {}
 
     def __init__(self):
@@ -266,12 +280,12 @@ class ScriptParser:
 
     def parse_function(self):
         start = self._pos
-        column = self._x - 2  # Set x position to start of function name ($)
+        column = self._x - 2     # Set x position to start of function name ($)
         line = self._y
         while True:
             ch = self.read()
             if ch == '(':
-                name = self._text[start : self._pos - 1]
+                name = self._text[start:self._pos-1]
                 if name not in self.functions:
                     raise ScriptUnknownFunction(StackItem(line, column, name))
                 return ScriptFunction(name, self.parse_arguments(), self, column, line)
@@ -285,7 +299,7 @@ class ScriptParser:
         while True:
             ch = self.read()
             if ch == '%':
-                return ScriptVariable(self._text[begin : self._pos - 1])
+                return ScriptVariable(self._text[begin:self._pos-1])
             elif ch is None:
                 self.__raise_eof()
             elif not isidentif(ch) and ch != ':':
@@ -348,7 +362,9 @@ class ScriptParser:
         return (tokens, ch)
 
     def load_functions(self):
-        self.functions = dict(script_functions.ext_point_script_functions)
+        self.functions = {}
+        for name, item in ScriptParser._function_registry:
+            self.functions[name] = item
 
     def parse(self, script, functions=False):
         """Parse the script."""
@@ -379,7 +395,9 @@ class MultiValue(MutableSequence):
             self.separator = separator.eval(self.parser)
         else:
             self.separator = separator
-        if self.separator == MULTI_VALUED_JOINER and len(multi) == 1 and isinstance(multi[0], ScriptVariable):
+        if (self.separator == MULTI_VALUED_JOINER
+            and len(multi) == 1
+            and isinstance(multi[0], ScriptVariable)):
             # Convert ScriptExpression containing only a single variable into variable
             self._multi = self.parser.context.getall(normalize_tagname(multi[0].name))
         else:

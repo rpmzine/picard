@@ -4,15 +4,15 @@
 #
 # Copyright (C) 2007 Oliver Charles
 # Copyright (C) 2007, 2010-2011 Lukáš Lalinský
-# Copyright (C) 2007-2011, 2015, 2018-2024 Philipp Wolfer
+# Copyright (C) 2007-2011, 2015, 2018-2023 Philipp Wolfer
 # Copyright (C) 2011 Michael Wiencek
 # Copyright (C) 2011-2012 Wieland Hoffmann
-# Copyright (C) 2013-2015, 2018-2024 Laurent Monin
+# Copyright (C) 2013-2015, 2018-2023 Laurent Monin
 # Copyright (C) 2015-2016 Rahul Raturi
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Frederik “Freso” S. Olesen
+# Copyright (C) 2018 Bob Swift
 # Copyright (C) 2018 Vishal Choudhary
-# Copyright (C) 2018, 2024 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -31,23 +31,10 @@
 
 from functools import partial
 
-from PyQt6 import (
+from PyQt5 import (
     QtCore,
     QtGui,
     QtWidgets,
-)
-
-from picard.const.defaults import (
-    DEFAULT_CAA_IMAGE_TYPE_EXCLUDE,
-    DEFAULT_CAA_IMAGE_TYPE_INCLUDE,
-)
-from picard.coverart.utils import (
-    CAA_TYPES,
-    translate_caa_type,
-)
-from picard.i18n import (
-    N_,
-    gettext as _,
 )
 
 from picard.ui import PicardDialog
@@ -89,9 +76,7 @@ class ArrowsColumn(QtWidgets.QWidget):
         self.selection_list = selection_list
         self.ignore_list = ignore_list
         self.callback = callback
-        spacer_item = QtWidgets.QSpacerItem(
-            20, 20, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding
-        )
+        spacer_item = QtWidgets.QSpacerItem(20, 20, QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Expanding)
         arrows_layout = QtWidgets.QVBoxLayout()
         arrows_layout.addItem(QtWidgets.QSpacerItem(spacer_item))
         self.button_add = ArrowButton('go-next' if reverse else 'go-previous', self.move_from_ignore)
@@ -163,29 +148,28 @@ class CAATypesSelectorDialog(PicardDialog):
     """Display dialog box to select the CAA image types to include and exclude from download and use.
 
     Keyword Arguments:
+        parent {[type]} -- Parent of the QDialog object being created (default: {None})
         types_include {[string]} -- List of CAA image types to include (default: {None})
         types_exclude {[string]} -- List of CAA image types to exclude (default: {None})
-        parent {[type]} -- Parent of the QDialog object being created (default: {None})
-        instructions_top {string} -- Replacement for the default instruction text to display above the list boxes (default: {None})
-        instructions_bottom {string} -- Replacement for the instruction text to display between the list boxes and the button bar (default: {None})
+        default_include {[string]} -- List of CAA image types to include by default (default: {None})
+        default_exclude {[string]} -- List of CAA image types to exclude by default (default: {None})
+        known_types {{string: string}} -- Dict. of all known CAA image types, unique name as key, translated title as value (default: {None})
     """
 
     help_url = 'doc_cover_art_types'
 
     def __init__(
-        self,
-        types_include=None,
-        types_exclude=None,
-        parent=None,
-        instructions_top=None,
-        instructions_bottom=None,
+        self, parent=None, types_include=None, types_exclude=None,
+        default_include=None, default_exclude=None, known_types=None
     ):
-        super().__init__(parent=parent)
-        types_include = set(types_include or ())
-        types_exclude = set(types_exclude or ())
-        self._default_include = DEFAULT_CAA_IMAGE_TYPE_INCLUDE
-        self._default_exclude = DEFAULT_CAA_IMAGE_TYPE_EXCLUDE
-        self._known_types = {t['name']: translate_caa_type(t['name']) for t in CAA_TYPES}
+        super().__init__(parent)
+        if types_include is None:
+            types_include = []
+        if types_exclude is None:
+            types_exclude = []
+        self._default_include = default_include or []
+        self._default_exclude = default_exclude or []
+        self._known_types = known_types or {}
 
         self.setWindowTitle(_("Cover art types"))
         self.setWindowModality(QtCore.Qt.WindowModality.WindowModal)
@@ -201,15 +185,13 @@ class CAATypesSelectorDialog(PicardDialog):
         self.fill_lists(types_include, types_exclude)
 
         # Set triggers when the lists receive the current focus
-        self.list_include.clicked.connect(partial(self._on_list_clicked, (self.list_ignore, self.list_exclude)))
-        self.list_exclude.clicked.connect(partial(self._on_list_clicked, (self.list_ignore, self.list_include)))
-        self.list_ignore.clicked.connect(partial(self._on_list_clicked, (self.list_include, self.list_exclude)))
+        self.list_include.clicked.connect(partial(self.clear_focus, [self.list_ignore, self.list_exclude]))
+        self.list_exclude.clicked.connect(partial(self.clear_focus, [self.list_ignore, self.list_include]))
+        self.list_ignore.clicked.connect(partial(self.clear_focus, [self.list_include, self.list_exclude]))
 
         # Add instructions to the dialog box
         instructions = QtWidgets.QLabel()
-        if instructions_top is None:
-            instructions_top = N_("Please select the contents of the image type 'Include' and 'Exclude' lists.")
-        instructions.setText(_(instructions_top))
+        instructions.setText(_("Please select the contents of the image type 'Include' and 'Exclude' lists."))
         instructions.setWordWrap(True)
         instructions.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self.layout.addWidget(instructions)
@@ -224,7 +206,7 @@ class CAATypesSelectorDialog(PicardDialog):
             self.list_exclude,
             self.list_ignore,
             callback=self.set_buttons_enabled_state,
-            reverse=True,
+            reverse=True
         )
 
         lists_layout = QtWidgets.QHBoxLayout()
@@ -252,26 +234,25 @@ class CAATypesSelectorDialog(PicardDialog):
 
         # Add usage explanation to the dialog box
         instructions = QtWidgets.QLabel()
-        if instructions_bottom is None:
-            instructions_bottom = N_(
-                "CAA images with an image type found in the 'Include' list will be downloaded and used "
-                "UNLESS they also have an image type found in the 'Exclude' list. Images with types "
-                "found in the 'Exclude' list will NEVER be used. Image types not appearing in the 'Include' "
-                "or 'Exclude' lists will not be considered when determining whether or not to download and "
-                "use a CAA image.\n"
-            )
-        instructions.setText(_(instructions_bottom))
+        instructions.setText(_(
+            "CAA images with an image type found in the 'Include' list will be downloaded and used "
+            "UNLESS they also have an image type found in the 'Exclude' list. Images with types "
+            "found in the 'Exclude' list will NEVER be used. Image types not appearing in the 'Include' "
+            "or 'Exclude' lists will not be considered when determining whether or not to download and "
+            "use a CAA image.\n")
+        )
         instructions.setWordWrap(True)
         instructions.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         self.layout.addWidget(instructions)
 
         self.buttonbox = QtWidgets.QDialogButtonBox(self)
         self.buttonbox.setOrientation(QtCore.Qt.Orientation.Horizontal)
-        self.buttonbox.addButton(StandardButton(StandardButton.OK), QtWidgets.QDialogButtonBox.ButtonRole.AcceptRole)
         self.buttonbox.addButton(
-            StandardButton(StandardButton.CANCEL), QtWidgets.QDialogButtonBox.ButtonRole.RejectRole
-        )
-        self.buttonbox.addButton(StandardButton(StandardButton.HELP), QtWidgets.QDialogButtonBox.ButtonRole.HelpRole)
+            StandardButton(StandardButton.OK), QtWidgets.QDialogButtonBox.ButtonRole.AcceptRole)
+        self.buttonbox.addButton(StandardButton(StandardButton.CANCEL),
+                                 QtWidgets.QDialogButtonBox.ButtonRole.RejectRole)
+        self.buttonbox.addButton(
+            StandardButton(StandardButton.HELP), QtWidgets.QDialogButtonBox.ButtonRole.HelpRole)
 
         extrabuttons = [
             (N_("I&nclude all"), self.move_all_to_include_list),
@@ -315,8 +296,8 @@ class CAATypesSelectorDialog(PicardDialog):
         'excludes' lists to determine the appropriate list for each type.
 
         Arguments:
-            includes -- set of standard image types to place in the "Include" listbox
-            excludes -- set of standard image types to place in the "Exclude" listbox
+            includes -- list of standard image types to place in the "Include" listbox
+            excludes -- list of standard image types to place in the "Exclude" listbox
         """
         self.list_include.clear()
         self.list_exclude.clear()
@@ -333,13 +314,13 @@ class CAATypesSelectorDialog(PicardDialog):
 
     @property
     def included(self):
-        return tuple(self.list_include.all_items_data()) or ('front',)
+        return list(self.list_include.all_items_data()) or ['front']
 
     @property
     def excluded(self):
-        return tuple(self.list_exclude.all_items_data())
+        return list(self.list_exclude.all_items_data()) or ['none']
 
-    def _on_list_clicked(self, lists, index):
+    def clear_focus(self, lists):
         for temp_list in lists:
             temp_list.clearSelection()
         self.set_buttons_enabled_state()
@@ -369,21 +350,8 @@ class CAATypesSelectorDialog(PicardDialog):
         self.arrows_exclude.button_remove.setEnabled(has_items_exclude and has_selected_exclude)
         self.arrows_exclude.button_remove_all.setEnabled(has_items_exclude)
 
-    @classmethod
-    def display(
-        cls,
-        types_include=None,
-        types_exclude=None,
-        parent=None,
-        instructions_top=None,
-        instructions_bottom=None,
-    ):
-        dialog = cls(
-            types_include=types_include,
-            types_exclude=types_exclude,
-            parent=parent,
-            instructions_top=instructions_top,
-            instructions_bottom=instructions_bottom,
-        )
-        result = dialog.exec()
-        return (dialog.included, dialog.excluded, result == QtWidgets.QDialog.DialogCode.Accepted)
+
+def display_caa_types_selector(**kwargs):
+    dialog = CAATypesSelectorDialog(**kwargs)
+    result = dialog.exec_()
+    return (dialog.included, dialog.excluded, result == QtWidgets.QDialog.DialogCode.Accepted)

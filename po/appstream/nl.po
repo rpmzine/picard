@@ -5,8 +5,7 @@
 # Maurits Meulenbelt, 2021
 # Transifex Bot <>, 2023
 # mfmeulenbelt <mfmeulenbelt@gmail.com>, 2023.
-# mfmeulenbelt <mfmeulenbelt@users.noreply.translations.metabrainz.org>, 2024, 2025.
-# Weblate <noreply-mt-weblate@weblate.org>, 2025.
+# mfmeulenbelt <mfmeulenbelt@users.noreply.translations.metabrainz.org>, 2024.
 #
 # Translators:
 #
@@ -14,31 +13,28 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-04-12 10:31+0200\n"
-"PO-Revision-Date: 2025-04-19 14:20+0000\n"
-"Last-Translator: mfmeulenbelt "
-"<mfmeulenbelt@users.noreply.translations.metabrainz.org>\n"
-"Language-Team: Dutch <https://translations.metabrainz.org/projects/picard/3/"
+"POT-Creation-Date: 2023-09-05 22:58+0200\n"
+"PO-Revision-Date: 2024-01-07 12:28+0000\n"
+"Last-Translator: mfmeulenbelt <mfmeulenbelt@users.noreply.translations."
+"metabrainz.org>\n"
+"Language-Team: Dutch <https://translations.metabrainz.org/projects/picard/2/"
 "appstream/nl/>\n"
 "Language: nl\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=n != 1;\n"
-"X-Generator: Weblate 5.11\n"
+"X-Generator: Weblate 5.3\n"
 
 #: org.musicbrainz.Picard.appdata.xml.in:6 org.musicbrainz.Picard.desktop.in:3
 msgid "MusicBrainz Picard"
 msgstr "MusicBrainz Picard"
 
 #: org.musicbrainz.Picard.appdata.xml.in:7
-msgid ""
-"Picard is a cross-platform music tagger powered by the MusicBrainz database"
-msgstr ""
-"Picard is een platformoverschrijdende tagger voor muziek op basis van de "
-"MusicBrainz-databank"
+msgid "MusicBrainz's music tagger"
+msgstr "MusicBrainz’ muziektagger"
 
-#: org.musicbrainz.Picard.appdata.xml.in:12
+#: org.musicbrainz.Picard.appdata.xml.in:10
 msgid ""
 "Do you need to clean up your music library? Picard is an open-source cross-"
 "platform music tagger by MusicBrainz. It has the ability to identify audio "
@@ -48,7 +44,7 @@ msgstr ""
 "meerdere platformen van MusicBrainz. Het kan je audiobestanden zelfs zonder "
 "bestaande tags identificeren."
 
-#: org.musicbrainz.Picard.appdata.xml.in:17
+#: org.musicbrainz.Picard.appdata.xml.in:15
 msgid ""
 "Picard helps you organize your music collection by renaming your music files "
 "and sorting them into a folder structure exactly the way you want it. A "
@@ -62,15 +58,15 @@ msgstr ""
 "ondersteunt een breed scala aan audioformaten en kan ook een hele cd voor je "
 "opzoeken."
 
-#: org.musicbrainz.Picard.appdata.xml.in:24
+#: org.musicbrainz.Picard.appdata.xml.in:22
 msgid "Tagging audio files has never been easier."
 msgstr "Audiobestanden taggen was nog nooit zo makkelijk."
 
-#: org.musicbrainz.Picard.appdata.xml.in:27
+#: org.musicbrainz.Picard.appdata.xml.in:25
 msgid "Features:"
 msgstr "Functies:"
 
-#: org.musicbrainz.Picard.appdata.xml.in:29
+#: org.musicbrainz.Picard.appdata.xml.in:27
 msgid ""
 "Multiple formats: Picard supports all popular music formats, including MP3, "
 "FLAC, OGG, M4A, WMA, WAV, and more."
@@ -78,7 +74,7 @@ msgstr ""
 "Veel bestandsformaten: Picard ondersteunt alle populaire muziekformaten, "
 "waaronder mp3, FLAC, OGG, M4A, WMA, WAV en nog veel meer."
 
-#: org.musicbrainz.Picard.appdata.xml.in:33
+#: org.musicbrainz.Picard.appdata.xml.in:31
 msgid ""
 "AcoustID: Picard uses AcoustID audio fingerprints, allowing files to be "
 "identified by the actual music, even if they have no metadata."
@@ -86,7 +82,7 @@ msgstr ""
 "AcoustID: Picard gebruikt AcoustID-vingerafdrukken om bestanden aan de hand "
 "van het geluid te identificeren, zelfs als ze geen tags hebben."
 
-#: org.musicbrainz.Picard.appdata.xml.in:37
+#: org.musicbrainz.Picard.appdata.xml.in:35
 msgid ""
 "Comprehensive database: Picard uses the open and community-maintained "
 "MusicBrainz database to provide accurate information about millions of music "
@@ -96,11 +92,11 @@ msgstr ""
 "MusicBrainz-databank geeft Picard je precieze informatie over miljoenen "
 "uitgaven."
 
-#: org.musicbrainz.Picard.appdata.xml.in:42
+#: org.musicbrainz.Picard.appdata.xml.in:40
 msgid "CD lookups: Picard can lookup entire music CDs with a click."
 msgstr "Cd’s opzoeken: Picard kan hele muziek-cd’s met een klik opzoeken."
 
-#: org.musicbrainz.Picard.appdata.xml.in:45
+#: org.musicbrainz.Picard.appdata.xml.in:43
 msgid ""
 "Plugin support: If you need a particular feature, you can choose from a "
 "selection of available plugins or write your own."
@@ -108,7 +104,7 @@ msgstr ""
 "Plug-inondersteuning: als je een bepaalde functie nodig hebt, kan je kiezen "
 "uit een brede selectie beschikbare plug-ins of er zelf een schrijven."
 
-#: org.musicbrainz.Picard.appdata.xml.in:49
+#: org.musicbrainz.Picard.appdata.xml.in:47
 msgid ""
 "Scripting: A flexible but easy to learn scripting language allows you to "
 "exactly specify how your music files will be named and how the tags will "
@@ -118,7 +114,7 @@ msgstr ""
 "mogelijkheid om de bestandsnamen en tags van je muziekbestanden aan je eigen "
 "wensen aan te passen."
 
-#: org.musicbrainz.Picard.appdata.xml.in:54
+#: org.musicbrainz.Picard.appdata.xml.in:52
 msgid ""
 "Cover Art: Picard can find and download the correct cover art for your "
 "albums."
@@ -126,7 +122,7 @@ msgstr ""
 "Hoesafbeeldingen: Picard kan de juiste afbeeldingen voor je uitgaven vinden "
 "en downloaden."
 
-#: org.musicbrainz.Picard.appdata.xml.in:58
+#: org.musicbrainz.Picard.appdata.xml.in:56
 msgid ""
 "Open Source: Picard is licensed under the GNU General Public License 2.0 or "
 "later, and is hosted on GitHub where it is actively developed by some "
@@ -136,7 +132,7 @@ msgstr ""
 "en wordt gehost op GitHub, waar het door geweldige ontwikkelaars wordt "
 "ontwikkeld."
 
-#: org.musicbrainz.Picard.appdata.xml.in:111
+#: org.musicbrainz.Picard.appdata.xml.in:109
 msgid "MetaBrainz Foundation"
 msgstr "MetaBrainz Foundation"
 
@@ -147,6 +143,3 @@ msgstr "Tag je muziek met de volgende generatie MusicBrainz-tagger"
 #: org.musicbrainz.Picard.desktop.in:16
 msgid "New Window"
 msgstr "Nieuw venster"
-
-#~ msgid "MusicBrainz's music tagger"
-#~ msgstr "MusicBrainz’ muziektagger"

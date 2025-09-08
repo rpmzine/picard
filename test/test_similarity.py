@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006 Lukáš Lalinský
-# Copyright (C) 2013, 2018-2022 Laurent Monin
+# Copyright (C) 2013, 2018-2021 Laurent Monin
 # Copyright (C) 2018 Wieland Hoffmann
 # Copyright (C) 2021 Philipp Wolfer
 #
@@ -31,6 +31,7 @@ from picard.similarity import (
 
 
 class SimilarityTest(PicardTestCase):
+
     def test_correct(self):
         self.assertEqual(similarity("K!", "K!"), 1.0)
         self.assertEqual(similarity("BBB", "AAA"), 0.0)

@@ -3,16 +3,16 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2007, 2014, 2017 Lukáš Lalinský
-# Copyright (C) 2008, 2014, 2019-2024 Philipp Wolfer
+# Copyright (C) 2008, 2014, 2019-2023 Philipp Wolfer
 # Copyright (C) 2012, 2017 Wieland Hoffmann
 # Copyright (C) 2012-2014 Michael Wiencek
-# Copyright (C) 2013-2016, 2018-2024 Laurent Monin
+# Copyright (C) 2013-2016, 2018-2022 Laurent Monin
 # Copyright (C) 2016 Suhas
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2017 Sophist-UK
 # Copyright (C) 2018 Vishal Choudhary
 # Copyright (C) 2020-2021 Gabriel Ferreira
-# Copyright (C) 2021-2024 Bob Swift
+# Copyright (C) 2021-2022 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -30,10 +30,15 @@
 
 
 from collections import defaultdict
+import inspect
+from operator import itemgetter
 import os
 import shutil
+import threading
 
-from PyQt6 import QtCore
+import fasteners
+
+from PyQt5 import QtCore
 
 from picard import (
     PICARD_APP_NAME,
@@ -41,7 +46,7 @@ from picard import (
     PICARD_VERSION,
     log,
 )
-from picard.profile import profile_groups_all_settings
+from picard.profile import UserProfileGroups
 from picard.version import Version
 
 
@@ -56,10 +61,8 @@ class ConfigUpgradeError(Exception):
 
 
 class ConfigSection(QtCore.QObject):
-    """Configuration section."""
 
-    # Signal emitted when the value of a setting has changed.
-    setting_changed = QtCore.pyqtSignal(str, object, object)
+    """Configuration section."""
 
     def __init__(self, config, name):
         super().__init__()
@@ -78,18 +81,19 @@ class ConfigSection(QtCore.QObject):
         return self.value(name, opt, opt.default)
 
     def __setitem__(self, name, value):
-        old_value = self.__getitem__(name)
         key = self.key(name)
         self.__qt_config.setValue(key, value)
         self._memoization[key].dirty = True
-        if value != old_value:
-            self.setting_changed.emit(name, old_value, value)
 
     def __contains__(self, name):
         return self.__qt_config.contains(self.key(name))
 
     def as_dict(self):
-        return {key: self[key] for section, key in list(Option.registry) if section == self.__name}
+        return {
+            key: self[key] for section, key
+            in list(Option.registry)
+            if section == self.__name
+        }
 
     def remove(self, name):
         key = self.key(name)
@@ -132,8 +136,8 @@ class ConfigSection(QtCore.QObject):
 
 
 class SettingConfigSection(ConfigSection):
-    """Custom subclass to automatically accommodate saving and retrieving values based on user profile settings."""
-
+    """Custom subclass to automatically accommodate saving and retrieving values based on user profile settings.
+    """
     PROFILES_KEY = 'user_profiles'
     SETTINGS_KEY = 'user_profile_settings'
 
@@ -170,11 +174,7 @@ class SettingConfigSection(ConfigSection):
     def _get_profile_settings(self, profile_id):
         if self.settings_override is None:
             # Set to None if profile_id not in profile settings
-            profile_settings = (
-                self.__qt_config.profiles[self.SETTINGS_KEY][profile_id]
-                if profile_id in self.__qt_config.profiles[self.SETTINGS_KEY]
-                else None
-            )
+            profile_settings = self.__qt_config.profiles[self.SETTINGS_KEY][profile_id] if profile_id in self.__qt_config.profiles[self.SETTINGS_KEY] else None
         else:
             # Set to None if profile_id not in settings_override
             profile_settings = self.settings_override[profile_id] if profile_id in self.settings_override else None
@@ -185,8 +185,8 @@ class SettingConfigSection(ConfigSection):
 
     def __getitem__(self, name):
         # Don't process settings that are not profile-specific
-        if name in profile_groups_all_settings():
-            for _profile_id, settings in self._get_active_profile_settings():
+        if name in UserProfileGroups.ALL_SETTINGS:
+            for profile_id, settings in self._get_active_profile_settings():
                 if name in settings and settings[name] is not None:
                     return settings[name]
         opt = Option.get(self.__name, name)
@@ -195,20 +195,15 @@ class SettingConfigSection(ConfigSection):
         return self.value(name, opt, opt.default)
 
     def __setitem__(self, name, value):
-        old_value = self.__getitem__(name)
         # Don't process settings that are not profile-specific
-        if name in profile_groups_all_settings():
+        if name in UserProfileGroups.ALL_SETTINGS:
             for profile_id, settings in self._get_active_profile_settings():
                 if name in settings:
                     self._save_profile_setting(profile_id, name, value)
-                    if value != old_value:
-                        self.setting_changed.emit(name, old_value, value)
                     return
         key = self.key(name)
         self.__qt_config.setValue(key, value)
         self._memoization[key].dirty = True
-        if value != old_value:
-            self.setting_changed.emit(name, old_value, value)
 
     def _save_profile_setting(self, profile_id, name, value):
         profile_settings = self.__qt_config.profiles[self.SETTINGS_KEY]
@@ -225,6 +220,7 @@ class SettingConfigSection(ConfigSection):
 
 
 class Config(QtCore.QSettings):
+
     """Configuration.
     QSettings is not thread safe, each thread must use its own instance of this class.
     Use `get_config()` to obtain a Config instance for the current thread.
@@ -254,20 +250,40 @@ class Config(QtCore.QSettings):
         if 'version' not in self.application or not self.application['version']:
             TextOption('application', 'version', '0.0.0dev0')
         self._version = Version.from_string(self.application['version'])
+        self._upgrade_hooks = dict()
+
+    def event(self, event):
+        if event.type() == QtCore.QEvent.Type.UpdateRequest:
+            # Syncing the config file can trigger a deadlock between QSettings internal mutex and
+            # the Python GIL in PyQt up to 5.15.2. Workaround this by handling this ourselves
+            # with custom file locking.
+            # See also https: // tickets.metabrainz.org/browse/PICARD-2088
+            log.debug("Config file update requested on thread %r", threading.get_ident())
+            self.sync()
+            return True
+        else:
+            return super().event(event)
+
+    def sync(self):
+        # Custom file locking for save multi process syncing of the config file. This is needed
+        # as we have atomicSyncRequired disabled.
+        with fasteners.InterProcessLock(self.get_lockfile_name()):
+            super().sync()
+
+    def get_lockfile_name(self):
+        filename = self.fileName()
+        directory = os.path.dirname(filename)
+        filename = '.' + os.path.basename(filename) + '.synclock'
+        return os.path.join(directory, filename)
 
     @classmethod
     def from_app(cls, parent):
         """Build a Config object using the default configuration file
         location."""
         this = cls()
-        QtCore.QSettings.__init__(
-            this,
-            QtCore.QSettings.Format.IniFormat,
-            QtCore.QSettings.Scope.UserScope,
-            PICARD_ORG_NAME,
-            PICARD_APP_NAME,
-            parent,
-        )
+        QtCore.QSettings.__init__(this, QtCore.QSettings.Format.IniFormat,
+                                  QtCore.QSettings.Scope.UserScope, PICARD_ORG_NAME,
+                                  PICARD_APP_NAME, parent)
 
         # Check if there is a config file specifically for this version
         versioned_config_file = this._versioned_config_filename(PICARD_VERSION)
@@ -291,59 +307,70 @@ class Config(QtCore.QSettings):
         """Build a Config object using a user-provided configuration file
         path."""
         this = cls()
-        QtCore.QSettings.__init__(this, filename, QtCore.QSettings.Format.IniFormat, parent)
+        QtCore.QSettings.__init__(this, filename, QtCore.QSettings.Format.IniFormat,
+                                  parent)
         this.__initialize()
         return this
 
-    def run_upgrade_hooks(self, hooks):
-        """Executes passed hooks to upgrade config version to the latest"""
+    def register_upgrade_hook(self, func, *args):
+        """Register a function to upgrade from one config version to another"""
+        to_version = Version.from_string(func.__name__)
+        assert to_version <= PICARD_VERSION, "%r > %r !!!" % (to_version, PICARD_VERSION)
+        self._upgrade_hooks[to_version] = {
+            'func': func,
+            'args': args,
+            'done': False
+        }
+
+    def run_upgrade_hooks(self, outputfunc=None):
+        """Executes registered functions to upgrade config version to the latest"""
         if self._version == Version(0, 0, 0, 'dev', 0):
             # This is a freshly created config
-            self._write_version(PICARD_VERSION)
+            self._version = PICARD_VERSION
+            self._write_version()
             return
-        if not hooks:
+        if not self._upgrade_hooks:
             return
         if self._version >= PICARD_VERSION:
             if self._version > PICARD_VERSION:
-                print(
-                    "Warning: config file %s was created by a more recent "
-                    "version of Picard (current is %s)" % (self._version, PICARD_VERSION)
-                )
+                print("Warning: config file %s was created by a more recent "
+                      "version of Picard (current is %s)" % (
+                          self._version.to_string(),
+                          PICARD_VERSION.to_string()
+                      ))
             return
-        for version in list(hooks):
-            hook = hooks[version]
+        for version in sorted(self._upgrade_hooks):
+            hook = self._upgrade_hooks[version]
             if self._version < version:
                 try:
-                    if hook.__doc__:
-                        log.debug(
-                            "Config upgrade %s -> %s: %s"
-                            % (
-                                self._version,
-                                version,
-                                hook.__doc__.strip(),
-                            )
-                        )
-                    hook(self)
-                except BaseException as e:
+                    if outputfunc and hook['func'].__doc__:
+                        outputfunc("Config upgrade %s -> %s: %s" % (
+                                   self._version.to_string(),
+                                   version.to_string(),
+                                   hook['func'].__doc__.strip()))
+                    hook['func'](self, *hook['args'])
+                except BaseException:
+                    import traceback
                     raise ConfigUpgradeError(
                         "Error during config upgrade from version %s to %s "
-                        "using %s()"
-                        % (
-                            self._version,
-                            version,
-                            hook.__name__,
-                        )
-                    ) from e
+                        "using %s():\n%s" % (
+                            self._version.to_string(),
+                            version.to_string(),
+                            hook['func'].__name__,
+                            traceback.format_exc()
+                        ))
                 else:
-                    del hooks[version]
-                    self._write_version(version)
+                    hook['done'] = True
+                    self._version = version
+                    self._write_version()
             else:
                 # hook is not applicable, mark as done
-                del hooks[version]
+                hook['done'] = True
 
-        if not hooks:
+        if all(map(itemgetter('done'), self._upgrade_hooks.values())):
             # all hooks were executed, ensure config is marked with latest version
-            self._write_version(PICARD_VERSION)
+            self._version = PICARD_VERSION
+            self._write_version()
 
     def _backup_settings(self):
         if Version(0, 0, 0) < self._version < PICARD_VERSION:
@@ -359,17 +386,15 @@ class Config(QtCore.QSettings):
             return False
         return True
 
-    def _write_version(self, new_version):
-        self._version = new_version
-        self.application['version'] = str(self._version)
+    def _write_version(self):
+        self.application['version'] = self._version.to_string()
         self.sync()
 
     def _versioned_config_filename(self, version=None):
         if not version:
             version = self._version
-        return os.path.join(
-            os.path.dirname(self.fileName()), '%s-%s.ini' % (self.applicationName(), version.short_str())
-        )
+        return os.path.join(os.path.dirname(self.fileName()), '%s-%s.ini' % (
+            self.applicationName(), version.to_string(short=True)))
 
     def save_user_backup(self, backup_path):
         if backup_path == self.fileName():
@@ -378,26 +403,31 @@ class Config(QtCore.QSettings):
         return self._save_backup(backup_path)
 
 
-class OptionError(Exception):
-    def __init__(self, message, section, name):
-        super().__init__("Option %s/%s: %s" % (section, name, message))
-
-
 class Option(QtCore.QObject):
+
     """Generic option."""
 
     registry = {}
     qtype = None
 
-    def __init__(self, section, name, default, title=None):
+    def __init__(self, section, name, default):
         key = (section, name)
         if key in self.registry:
-            raise OptionError("Already declared", section, name)
+            stack = inspect.stack()
+            fmt = "Option %s/%s already declared"
+            args = [section, name]
+            if len(stack) > 1:
+                f = stack[1]
+                fmt += "\nat %s:%d: in %s"
+                args.extend((f.filename, f.lineno, f.function))
+                if f.code_context:
+                    fmt += "\n%s"
+                    args.append("\n".join(f.code_context).rstrip())
+            log.error(fmt, *args)
         super().__init__()
         self.section = section
         self.name = name
         self.default = default
-        self.title = title
         self.registry[key] = self
 
     @classmethod
@@ -405,23 +435,9 @@ class Option(QtCore.QObject):
         return cls.registry.get((section, name))
 
     @classmethod
-    def get_default(cls, section, name):
-        opt = cls.get(section, name)
-        if opt is None:
-            raise OptionError("No such option", section, name)
-        return opt.default
-
-    @classmethod
-    def get_title(cls, section, name):
-        opt = cls.get(section, name)
-        if opt is None:
-            raise OptionError("No such option", section, name)
-        return opt.title
-
-    @classmethod
-    def add_if_missing(cls, section, name, default, *args, **kwargs):
+    def add_if_missing(cls, section, name, default):
         if not cls.exists(section, name):
-            cls(section, name, default, *args, **kwargs)
+            cls(section, name, default)
 
     @classmethod
     def exists(cls, section, name):
@@ -432,30 +448,31 @@ class Option(QtCore.QObject):
 
 
 class TextOption(Option):
+
     convert = str
     qtype = 'QString'
 
 
 class BoolOption(Option):
+
     convert = bool
     qtype = bool
 
 
 class IntOption(Option):
+
     convert = int
 
 
 class FloatOption(Option):
+
     convert = float
 
 
 class ListOption(Option):
-    def convert(self, value):
-        if value is None:
-            return []
-        elif isinstance(value, str):
-            raise ValueError('Expected list or list like object, got "%r"' % value)
-        return list(value)
+
+    convert = list
+    qtype = 'QVariantList'
 
 
 config = None
@@ -464,9 +481,7 @@ persist = None
 profiles = None
 
 
-def setup_config(app=None, filename=None):
-    if app is None:
-        app = QtCore.QCoreApplication.instance()
+def setup_config(app, filename=None):
     global config, setting, persist, profiles
     if filename is None:
         config = Config.from_app(app)
@@ -492,5 +507,5 @@ def load_new_config(filename=None):
     except OSError:
         log.error("Failed restoring config file from %s", filename)
         return False
-    setup_config(filename=config_file)
+    setup_config(QtCore.QObject.tagger, config_file)
     return True

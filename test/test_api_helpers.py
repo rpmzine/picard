@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2018 Wieland Hoffmann
-# Copyright (C) 2018, 2020-2023 Laurent Monin
+# Copyright (C) 2018, 2020-2021, 2023 Laurent Monin
 # Copyright (C) 2019-2023 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
@@ -24,7 +24,7 @@
 
 from unittest.mock import MagicMock
 
-from PyQt6.QtCore import QUrl
+from PyQt5.QtCore import QUrl
 
 from test.picardtestcase import PicardTestCase
 
@@ -41,6 +41,7 @@ from picard.webservice.api_helpers import (
 
 
 class APITest(PicardTestCase):
+
     def setUp(self):
         super().setUp()
         base_url = "http://abc.com/v1"
@@ -71,6 +72,7 @@ class APITest(PicardTestCase):
 
 
 class MBAPITest(PicardTestCase):
+
     def setUp(self):
         super().setUp()
         self.config = {'server_host': "mb.org", "server_port": 443}
@@ -147,7 +149,7 @@ class MBAPITest(PicardTestCase):
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<metadata xmlns="http://musicbrainz.org/ns/mmd-2.0#">'
             '<recording-list></recording-list>'
-            '</metadata>',
+            '</metadata>'
         )
 
     def test_xml_ratings_one(self):
@@ -160,7 +162,7 @@ class MBAPITest(PicardTestCase):
             '<recording-list>'
             '<recording id="a"><user-rating>20</user-rating></recording>'
             '</recording-list>'
-            '</metadata>',
+            '</metadata>'
         )
 
     def test_xml_ratings_multiple(self):
@@ -178,7 +180,7 @@ class MBAPITest(PicardTestCase):
             '<recording id="a"><user-rating>20</user-rating></recording>'
             '<recording id="b"><user-rating>40</user-rating></recording>'
             '</recording-list>'
-            '</metadata>',
+            '</metadata>'
         )
 
     def test_xml_ratings_encode(self):
@@ -191,7 +193,7 @@ class MBAPITest(PicardTestCase):
             '<recording-list>'
             '<recording id="&lt;a&amp;&quot;\'&gt;"><user-rating>0</user-rating></recording>'
             '</recording-list>'
-            '</metadata>',
+            '</metadata>'
         )
 
     def test_xml_ratings_raises_value_error(self):
@@ -199,7 +201,7 @@ class MBAPITest(PicardTestCase):
         self.assertRaises(ValueError, self.api._xml_ratings, ratings)
 
     def test_collection_request(self):
-        releases = tuple("r" + str(i) for i in range(13))
+        releases = tuple("r"+str(i) for i in range(13))
         generator = self.api._collection_request("test", releases, batchsize=5)
         batch = next(generator)
         self.assertEqual(batch, '/collection/test/releases/r0;r1;r2;r3;r4')
@@ -217,6 +219,7 @@ class MBAPITest(PicardTestCase):
 
 
 class AcoustdIdAPITest(PicardTestCase):
+
     def setUp(self):
         super().setUp()
         self.config = {'acoustid_apikey': "apikey"}
@@ -250,41 +253,29 @@ class AcoustdIdAPITest(PicardTestCase):
         result = self.api._submissions_to_args(submissions)
         expected = {
             'user': 'apikey',
-            'fingerprint.0': 'f1',
-            'duration.0': '1',
-            'mbid.0': 'r1',
-            'puid.0': 'p1',
-            'fingerprint.1': 'f2',
-            'duration.1': '2',
-            'mbid.1': 'r2',
-            'puid.1': 'p2',
+            'fingerprint.0': 'f1', 'duration.0': '1', 'mbid.0': 'r1', 'puid.0': 'p1',
+            'fingerprint.1': 'f2', 'duration.1': '2', 'mbid.1': 'r2', 'puid.1': 'p2'
         }
         self.assertEqual(result, expected)
 
     def test_submissions_to_args_invalid_duration(self):
-        metadata1 = Metadata(
-            {
-                'title': 'The Track',
-                'artist': 'The Artist',
-                'album': 'The Album',
-                'albumartist': 'The Album Artist',
-                'tracknumber': '4',
-                'discnumber': '2',
-            },
-            length=100000,
-        )
-        metadata2 = Metadata(
-            {'year': '2022'},
-            length=100000,
-        )
-        metadata3 = Metadata(
-            {'date': '1980-08-30'},
-            length=100000,
-        )
-        metadata4 = Metadata(
-            {'date': '08-30'},
-            length=100000,
-        )
+        metadata1 = Metadata({
+            'title': 'The Track',
+            'artist': 'The Artist',
+            'album': 'The Album',
+            'albumartist': 'The Album Artist',
+            'tracknumber': '4',
+            'discnumber': '2',
+        }, length=100000)
+        metadata2 = Metadata({
+            'year': '2022'
+        }, length=100000)
+        metadata3 = Metadata({
+            'date': '1980-08-30'
+        }, length=100000)
+        metadata4 = Metadata({
+            'date': '08-30'
+        }, length=100000)
         submissions = [
             Submission('f1', 500000, recordingid='or1', metadata=metadata1),
             Submission('f2', 500000, recordingid='or2', metadata=metadata2),
@@ -319,13 +310,18 @@ class AcoustdIdAPITest(PicardTestCase):
 
 
 class LuceneHelpersTest(PicardTestCase):
+
     def test_escape_lucene_query(self):
         self.assertEqual('', escape_lucene_query(''))
         self.assertEqual(
-            '\\+\\-\\&\\|\\!\\(\\)\\{\\}\\[\\]\\^\\"\\~\\*\\?\\:\\\\\\/', escape_lucene_query('+-&|!(){}[]^"~*?:\\/')
-        )
+            '\\+\\-\\&\\|\\!\\(\\)\\{\\}\\[\\]\\^\\"\\~\\*\\?\\:\\\\\\/',
+            escape_lucene_query('+-&|!(){}[]^"~*?:\\/'))
 
     def test_build_lucene_query(self):
-        args = {'title': 'test', 'artist': 'foo:bar', 'tnum': '3'}
+        args = {
+            'title': 'test',
+            'artist': 'foo:bar',
+            'tnum': '3'
+        }
         query = build_lucene_query(args)
         self.assertEqual('title:(test) artist:(foo\\:bar) tnum:(3)', query)

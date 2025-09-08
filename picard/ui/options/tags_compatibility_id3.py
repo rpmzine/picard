@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006 Lukáš Lalinský
-# Copyright (C) 2019-2021, 2023, 2025 Philipp Wolfer
-# Copyright (C) 2021, 2023-2024 Laurent Monin
+# Copyright (C) 2019-2021, 2023 Philipp Wolfer
+# Copyright (C) 2021 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,17 +23,23 @@
 
 from functools import partial
 
-from picard.config import get_config
-from picard.extension_points.options_pages import register_options_page
-from picard.i18n import N_
+from picard.config import (
+    BoolOption,
+    TextOption,
+    get_config,
+)
 
-from picard.ui.forms.ui_options_tags_compatibility_id3 import (
+from picard.ui.options import (
+    OptionsPage,
+    register_options_page,
+)
+from picard.ui.ui_options_tags_compatibility_id3 import (
     Ui_TagsCompatibilityOptionsPage,
 )
-from picard.ui.options import OptionsPage
 
 
 class TagsCompatibilityID3OptionsPage(OptionsPage):
+
     NAME = 'tags_compatibility_id3'
     TITLE = N_("ID3")
     PARENT = 'tags'
@@ -41,16 +47,16 @@ class TagsCompatibilityID3OptionsPage(OptionsPage):
     ACTIVE = True
     HELP_URL = "/config/options_tags_compatibility_id3.html"
 
-    OPTIONS = (
-        ('write_id3v23', ['write_id3v23', 'write_id3v24']),
-        ('id3v2_encoding', ['enc_utf8', 'enc_utf16', 'enc_iso88591']),
-        ('id3v23_join_with', ['id3v23_join_with']),
-        ('itunes_compatible_grouping', ['itunes_compatible_grouping']),
-        ('write_id3v1', ['write_id3v1']),
-    )
+    options = [
+        BoolOption('setting', 'write_id3v1', True),
+        BoolOption('setting', 'write_id3v23', False),
+        TextOption('setting', 'id3v2_encoding', 'utf-8'),
+        TextOption('setting', 'id3v23_join_with', '/'),
+        BoolOption('setting', 'itunes_compatible_grouping', False),
+    ]
 
     def __init__(self, parent=None):
-        super().__init__(parent=parent)
+        super().__init__(parent)
         self.ui = Ui_TagsCompatibilityOptionsPage()
         self.ui.setupUi(self)
         self.ui.write_id3v23.clicked.connect(self.update_encodings)

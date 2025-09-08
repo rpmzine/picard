@@ -51,10 +51,6 @@
 
 # Action
 
-Additional actions required:
-* [ ] Update Picard [documentation](https://github.com/metabrainz/picard-docs) (please include a reference to this PR)
-* [ ] Other (please specify below)
-
 <!--
     Other than merging your change, do you want / need us to do anything else
     with your change? This could include reviewing a specific part of your PR.

@@ -3,10 +3,10 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2007 Lukáš Lalinský
-# Copyright (C) 2010, 2014, 2018-2022, 2024 Philipp Wolfer
+# Copyright (C) 2010, 2014, 2018-2022 Philipp Wolfer
 # Copyright (C) 2012 Chad Wilson
 # Copyright (C) 2013 Michael Wiencek
-# Copyright (C) 2013, 2017-2022, 2024 Laurent Monin
+# Copyright (C) 2013, 2017-2021 Laurent Monin
 # Copyright (C) 2014, 2017 Sophist-UK
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Antonio Larrosa
@@ -30,24 +30,18 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
+import builtins
+import copy
 import datetime
 import re
 import unittest
 from unittest import mock
-from unittest.mock import (
-    MagicMock,
-    patch,
-)
+from unittest.mock import MagicMock
 
 from test.picardtestcase import PicardTestCase
 
 from picard.cluster import Cluster
-from picard.const.defaults import DEFAULT_FILE_NAMING_FORMAT
-from picard.extension_points.script_functions import (
-    FunctionRegistryItem,
-    register_script_function,
-    script_function,
-)
+from picard.const import DEFAULT_FILE_NAMING_FORMAT
 from picard.metadata import (
     MULTI_VALUED_JOINER,
     Metadata,
@@ -65,9 +59,12 @@ from picard.script import (
     ScriptSyntaxError,
     ScriptUnicodeError,
     ScriptUnknownFunction,
+    register_script_function,
+    script_function,
     script_function_documentation,
     script_function_documentation_all,
 )
+from picard.script.functions import FunctionRegistryItem
 
 
 try:
@@ -109,18 +106,21 @@ class _DateTime(datetime.datetime):
 
 
 class ScriptParserTest(PicardTestCase):
+
     def setUp(self):
         super().setUp()
-        self.set_config_values(
-            {
-                'enabled_plugins': '',
-            }
-        )
+        self.set_config_values({
+            'enabled_plugins': '',
+        })
 
         self.parser = ScriptParser()
 
         # ensure we start on clean registry
         ScriptParser._cache = {}
+        self._backup_registry = copy.deepcopy(ScriptParser._function_registry)
+
+    def tearDown(self):
+        ScriptParser._function_registry = copy.deepcopy(self._backup_registry)
 
     def assertScriptResultEquals(self, script, expected, context=None, file=None):
         """Asserts that evaluating `script` returns `expected`.
@@ -132,27 +132,27 @@ class ScriptParserTest(PicardTestCase):
             context: A Metadata object with pre-set tags or None
         """
         actual = self.parser.eval(script, context=context, file=file)
-        self.assertEqual(actual, expected, "'%s' evaluated to '%s', expected '%s'" % (script, actual, expected))
+        self.assertEqual(actual,
+                         expected,
+                         "'%s' evaluated to '%s', expected '%s'"
+                         % (script, actual, expected))
 
     def test_function_registry_item(self):
         def somefunc():
             return 'x'
-
         item = FunctionRegistryItem(somefunc, 'x', 'y', 'doc')
         self.assertEqual(item.function, somefunc)
         self.assertEqual(item.eval_args, 'x')
         self.assertEqual(item.argcount, 'y')
         self.assertEqual(item.documentation, 'doc')
 
-        regex = (
-            r'^'
-            + re.escape(r'FunctionRegistryItem(<function ')
-            + r'[^ ]+'
-            + re.escape(r'.somefunc at ')
-            + r'[^>]+'
-            + re.escape(r'>, x, y, """doc""")')
-            + r'$'
-        )
+        regex = r'^'\
+                + re.escape(r'FunctionRegistryItem(<function ')\
+                + r'[^ ]+'\
+                + re.escape(r'.somefunc at ')\
+                + r'[^>]+'\
+                + re.escape(r'>, x, y, """doc""")')\
+                + r'$'
 
         self.assertRegex(repr(item), regex)
 
@@ -173,96 +173,79 @@ class ScriptParserTest(PicardTestCase):
         with self.assertRaisesRegex(ScriptUnicodeError, areg):
             self.parser.eval("\\ufffg")
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_decorator_default(self):
         # test default decorator and default prefix
         @script_function()
         def func_somefunc(parser):
             return "x"
-
         self.assertScriptResultEquals("$somefunc()", "x")
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_decorator_no_prefix(self):
         # function without prefix
         @script_function()
         def somefunc(parser):
             return "x"
-
         self.assertScriptResultEquals("$somefunc()", "x")
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_decorator_arg(self):
         # function with argument
         @script_function()
         def somefunc(parser, arg):
             return arg
-
-        @script_function()
-        def title(parser, arg):
-            return arg.upper()
-
         self.assertScriptResultEquals("$somefunc($title(x))", "X")
         areg = r"^\d+:\d+:\$somefunc: Wrong number of arguments for \$somefunc: Expected exactly 1"
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$somefunc()")
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_decorator_argcount(self):
         # ignore argument count
         @script_function(check_argcount=False)
         def somefunc(parser, *arg):
             return str(len(arg))
-
         self.assertScriptResultEquals("$somefunc(a,b,c)", "3")
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_decorator_altname(self):
         # alternative name
         @script_function(name="otherfunc")
         def somefunc4(parser):
             return "x"
-
         self.assertScriptResultEquals("$otherfunc()", "x")
         areg = r"^\d+:\d+:\$somefunc: Unknown function '\$somefunc'"
         with self.assertRaisesRegex(ScriptError, areg):
             self.parser.eval("$somefunc()")
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_decorator_altprefix(self):
         # alternative prefix
         @script_function(prefix='theprefix_')
         def theprefix_somefunc(parser):
             return "x"
-
         self.assertScriptResultEquals("$somefunc()", "x")
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_decorator_eval_args(self):
         # disable argument evaluation
         @script_function(eval_args=False)
         def somefunc(parser, arg):
             return arg.eval(parser)
-
-        @script_function()
-        def title(parser, arg):
-            return arg.upper()
-
         self.assertScriptResultEquals("$somefunc($title(x))", "X")
 
     @staticmethod
     def assertStartswith(text, expect):
         if not text.startswith(expect):
-            raise AssertionError("do not start with %r but with %r" % (expect, text[: len(expect)]))
+            raise AssertionError("do not start with %r but with %r" % (expect, text[:len(expect)]))
 
     @staticmethod
     def assertEndswith(text, expect):
         if not text.endswith(expect):
-            raise AssertionError("do not end with %r but with %r" % (expect, text[-len(expect) :]))
+            raise AssertionError("do not end with %r but with %r" % (expect, text[-len(expect):]))
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
+    @staticmethod
+    def reset_registry():
+        # use a clean registry, to ensure we have only one registered function
+        ScriptParser._function_registry = ExtensionPoint()
+
     def test_script_function_documentation_nodoc(self):
         """test script_function_documentation() with a function without documentation"""
+        self.reset_registry()
 
         @script_function()
         def func_nodocfunc(parser):
@@ -273,9 +256,10 @@ class ScriptParserTest(PicardTestCase):
         doc = script_function_documentation('nodocfunc', 'html')
         self.assertEqual(doc, '')
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_documentation(self):
         """test script_function_documentation() with a function with documentation"""
+        self.reset_registry()
+
         # the documentation used to test includes backquotes
         testdoc = '`$somefunc()`'
 
@@ -290,9 +274,10 @@ class ScriptParserTest(PicardTestCase):
             script_function_documentation('somefunc', 'unknownformat')
 
     @unittest.skipUnless(markdown, "markdown module missing")
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_documentation_html(self):
         """test script_function_documentation() with a function with documentation"""
+        self.reset_registry()
+
         # get html code as generated by markdown
         pre, post = markdown('`XXX`').split('XXX')
 
@@ -306,16 +291,17 @@ class ScriptParserTest(PicardTestCase):
         doc = script_function_documentation('somefunc', 'html')
         self.assertEqual(doc, pre + '$somefunc()' + post)
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_documentation_unknown_function(self):
         """test script_function_documentation() with an unknown function"""
+        self.reset_registry()
+
         areg = r"^no such function: unknownfunc"
         with self.assertRaisesRegex(ScriptFunctionDocError, areg):
             script_function_documentation('unknownfunc', 'html')
 
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_documentation_all(self):
         """test script_function_documentation_all() with markdown format"""
+        self.reset_registry()
 
         @script_function(documentation='somedoc2')
         def func_somefunc2(parser):
@@ -329,9 +315,10 @@ class ScriptParserTest(PicardTestCase):
         self.assertEqual(docall, 'somedoc1\nsomedoc2')
 
     @unittest.skipUnless(markdown, "markdown module missing")
-    @patch('picard.extension_points.script_functions.ext_point_script_functions', ExtensionPoint(label='test_script'))
     def test_script_function_documentation_all_html(self):
         """test script_function_documentation_all() with html format"""
+        self.reset_registry()
+
         # get html code as generated by markdown
         pre, post = markdown('XXX').split('XXX')
 
@@ -569,9 +556,7 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals("$replacemulti(%genre%,Idm,IDM)", "Electronic; IDM; Techno", context)
 
         context["genre"] = ["Electronic", "Jungle", "Bardcore"]
-        self.assertScriptResultEquals(
-            "$replacemulti(%genre%,Bardcore,Hardcore)", "Electronic; Jungle; Hardcore", context
-        )
+        self.assertScriptResultEquals("$replacemulti(%genre%,Bardcore,Hardcore)", "Electronic; Jungle; Hardcore", context)
 
         context["test"] = ["One", "Two", "Three"]
         self.assertScriptResultEquals("$replacemulti(%test%,Two,)", "One; Three", context)
@@ -600,25 +585,15 @@ class ScriptParserTest(PicardTestCase):
         self.assertScriptResultEquals(r'$rsearch(foo,foo|\(bar\))', "foo")
         self.assertScriptResultEquals(r'$rsearch(quux,foo|\(bar\)|\(baz\)|quux)', "quux")
         self.assertScriptResultEquals(r'$rsearch(foobar,foo\(?:\(baz\)|\(bar\)\))', "bar")
-        self.assertScriptResultEquals(
-            r'$rsearch(test \(disc 1\),\(?:\(?P<name>.+\)\\s+\)?\\\(disc \(?P<disc>\\d+\)\\\), disc)',
-            "1",
-        )
-        self.assertScriptResultEquals(
-            r'$rsearch(test \(disc 1\),\(?:\(?P<name>.+\)\\s+\)?\\\(disc \(?P<disc>\\d+\)\\\), name)',
-            "test",
-        )
-        self.assertScriptResultEquals(
-            r'$rsearch(\(disc 1\),\(?:\(?P<name>.+\)\\s+\)?\\\(disc \(?P<disc>\\d+\)\\\))',
-            "1",
-        )
-        self.assertScriptResultEquals(
-            r'$rsearch(\(disc 1\),\(?:\(?P<name>.+\)\\s+\)?\\\(disc \(?P<disc>\\d+\)\\\), name)',
-            "",
-        )
+        self.assertScriptResultEquals(r'$rsearch(test \(disc 1\),\(?:\(?P<name>.+\)\\s+\)?\\\(disc \(?P<disc>\\d+\)\\\), disc)', "1")
+        self.assertScriptResultEquals(r'$rsearch(test \(disc 1\),\(?:\(?P<name>.+\)\\s+\)?\\\(disc \(?P<disc>\\d+\)\\\), name)', "test")
+        self.assertScriptResultEquals(r'$rsearch(\(disc 1\),\(?:\(?P<name>.+\)\\s+\)?\\\(disc \(?P<disc>\\d+\)\\\))', "1")
+        self.assertScriptResultEquals(r'$rsearch(\(disc 1\),\(?:\(?P<name>.+\)\\s+\)?\\\(disc \(?P<disc>\\d+\)\\\), name)', "")
 
     def test_arguments(self):
-        self.assertTrue(self.parser.eval(r"$set(bleh,$rsearch(test \(disc 1\),\\\(disc \(\\d+\)\\\)))) $set(wer,1)"))
+        self.assertTrue(
+            self.parser.eval(
+                r"$set(bleh,$rsearch(test \(disc 1\),\\\(disc \(\\d+\)\\\)))) $set(wer,1)"))
 
     def test_cmd_gt(self):
         # Test with default processing
@@ -1377,7 +1352,7 @@ class ScriptParserTest(PicardTestCase):
 
     def test_cmd_matchedtracks(self):
         file = MagicMock()
-        file.parent_item.album.get_num_matched_tracks.return_value = 42
+        file.parent.album.get_num_matched_tracks.return_value = 42
         self.assertScriptResultEquals("$matchedtracks()", "42", file=file)
         self.assertScriptResultEquals("$matchedtracks()", "0")
         # The following only is possible for backward compatibility, arg is unused
@@ -1387,14 +1362,14 @@ class ScriptParserTest(PicardTestCase):
         file = MagicMock()
         cluster = Cluster(name="Test")
         cluster.files.append(file)
-        file.parent_item = cluster
+        file.parent = cluster
         self.assertScriptResultEquals("$matchedtracks()", "0", file=file)
 
     def test_cmd_is_complete(self):
         file = MagicMock()
-        file.parent_item.album.is_complete.return_value = True
+        file.parent.album.is_complete.return_value = True
         self.assertScriptResultEquals("$is_complete()", "1", file=file)
-        file.parent_item.album.is_complete.return_value = False
+        file.parent.album.is_complete.return_value = False
         self.assertScriptResultEquals("$is_complete()", "", file=file)
         self.assertScriptResultEquals("$is_complete()", "")
 
@@ -1402,7 +1377,7 @@ class ScriptParserTest(PicardTestCase):
         file = MagicMock()
         cluster = Cluster(name="Test")
         cluster.files.append(file)
-        file.parent_item = cluster
+        file.parent = cluster
         self.assertScriptResultEquals("$is_complete()", "", file=file)
 
     def test_cmd_is_video(self):
@@ -1423,14 +1398,14 @@ class ScriptParserTest(PicardTestCase):
         def func(a, *, required_kwarg):
             pass
 
-        with self.assertRaises(TypeError, msg="Functions with required keyword-only parameters are not supported"):
+        with self.assertRaises(TypeError,
+                               msg="Functions with required keyword-only parameters are not supported"):
             register_script_function(func)
 
     @staticmethod
     def test_optional_kwonly_parameters():
         def func(a, *, optional_kwarg=1):
             pass
-
         register_script_function(func)
 
     def test_char_escape(self):
@@ -1599,44 +1574,20 @@ class ScriptParserTest(PicardTestCase):
         alternate_output = "Output: 1=First 2=A; Second 3=B; Third 4=C"
         # Tests with context
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$foreach(%foo%,$set(output,%output% %_loop_count%=%_loop_value%))%output%",
-            foo_output,
-            context,
-        )
+        self.assertScriptResultEquals("$foreach(%foo%,$set(output,%output% %_loop_count%=%_loop_value%))%output%", foo_output, context)
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$foreach(%bar%,$set(output,%output% %_loop_count%=%_loop_value%))%output%",
-            loop_output,
-            context,
-        )
+        self.assertScriptResultEquals("$foreach(%bar%,$set(output,%output% %_loop_count%=%_loop_value%))%output%", loop_output, context)
         # Tests with static inputs
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$foreach(First:A; Second:B; Third:C,$set(output,%output% %_loop_count%=%_loop_value%))%output%",
-            loop_output,
-            context,
-        )
+        self.assertScriptResultEquals("$foreach(First:A; Second:B; Third:C,$set(output,%output% %_loop_count%=%_loop_value%))%output%", loop_output, context)
         # Tests with missing inputs
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$foreach(,$set(output,%output% %_loop_count%=%_loop_value%))%output%",
-            "Output:",
-            context,
-        )
+        self.assertScriptResultEquals("$foreach(,$set(output,%output% %_loop_count%=%_loop_value%))%output%", "Output:", context)
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$foreach(First:A; Second:B; Third:C,)%output%",
-            "Output:",
-            context,
-        )
+        self.assertScriptResultEquals("$foreach(First:A; Second:B; Third:C,)%output%", "Output:", context)
         # Tests with separator override
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$foreach(First:A; Second:B; Third:C,$set(output,%output% %_loop_count%=%_loop_value%),:)%output%",
-            alternate_output,
-            context,
-        )
+        self.assertScriptResultEquals("$foreach(First:A; Second:B; Third:C,$set(output,%output% %_loop_count%=%_loop_value%),:)%output%", alternate_output, context)
         # Tests with invalid number of arguments
         areg = r"^\d+:\d+:\$foreach: Wrong number of arguments for \$foreach: Expected between 2 and 3, "
         with self.assertRaisesRegex(ScriptError, areg):
@@ -1652,51 +1603,23 @@ class ScriptParserTest(PicardTestCase):
         loop_output = "Output: 1 2 3 4 5"
         # Tests with context
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$set(_loop_count,1)$while($lt(%_loop_count%,%max_value%,int),$set(output,%output% %_loop_count%))%output%",
-            loop_output,
-            context,
-        )
+        self.assertScriptResultEquals("$set(_loop_count,1)$while($lt(%_loop_count%,%max_value%,int),$set(output,%output% %_loop_count%))%output%", loop_output, context)
         # Tests with static inputs
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$set(_loop_count,1)$while($lt(%_loop_count%,5,int),$set(output,%output% %_loop_count%))%output%",
-            loop_output,
-            context,
-        )
+        self.assertScriptResultEquals("$set(_loop_count,1)$while($lt(%_loop_count%,5,int),$set(output,%output% %_loop_count%))%output%", loop_output, context)
         # Tests with invalid conditional input
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$while($lt(%_loop_count%,5,int),$set(output,%output% %_loop_count%))%output%",
-            "Output:",
-            context,
-        )
+        self.assertScriptResultEquals("$while($lt(%_loop_count%,5,int),$set(output,%output% %_loop_count%))%output%", "Output:", context)
         # Tests with forced conditional (runaway condition)
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$while(1,$set(output,%output% %_loop_count%))$right(%output%,4)",
-            "1000",
-            context,
-        )
+        self.assertScriptResultEquals("$while(1,$set(output,%output% %_loop_count%))$right(%output%,4)", "1000", context)
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$while(0,$set(output,%output% %_loop_count%))$right(%output%,4)",
-            "1000",
-            context,
-        )
+        self.assertScriptResultEquals("$while(0,$set(output,%output% %_loop_count%))$right(%output%,4)", "1000", context)
         # Tests with missing inputs
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$while($lt(%_loop_count%,5,int),)%output%",
-            "Output:",
-            context,
-        )
+        self.assertScriptResultEquals("$while($lt(%_loop_count%,5,int),)%output%", "Output:", context)
         context["output"] = "Output:"
-        self.assertScriptResultEquals(
-            "$while(,$set(output,%output% %_loop_count%))%output%",
-            "Output:",
-            context,
-        )
+        self.assertScriptResultEquals("$while(,$set(output,%output% %_loop_count%))%output%", "Output:", context)
         # Tests with invalid number of arguments
         areg = r"^\d+:\d+:\$while: Wrong number of arguments for \$while: Expected exactly 2, "
         with self.assertRaisesRegex(ScriptError, areg):
@@ -1713,69 +1636,25 @@ class ScriptParserTest(PicardTestCase):
         alternate_output = "1=FIRST:2=A; SECOND:3=B; THIRD:4=C"
         # Tests with context
         context["foo"] = "First:A; Second:B; Third:C"
-        self.assertScriptResultEquals(
-            "$map(%foo%,$upper(%_loop_count%=%_loop_value%))",
-            foo_output,
-            context,
-        )
+        self.assertScriptResultEquals("$map(%foo%,$upper(%_loop_count%=%_loop_value%))", foo_output, context)
         context["bar"] = ["First:A", "Second:B", "Third:C"]
-        self.assertScriptResultEquals(
-            "$map(%bar%,$upper(%_loop_count%=%_loop_value%))",
-            loop_output,
-            context,
-        )
+        self.assertScriptResultEquals("$map(%bar%,$upper(%_loop_count%=%_loop_value%))", loop_output, context)
         # Tests with static inputs
-        self.assertScriptResultEquals(
-            "$map(First:A; Second:B; Third:C,$upper(%_loop_count%=%_loop_value%))",
-            loop_output,
-            context,
-        )
+        self.assertScriptResultEquals("$map(First:A; Second:B; Third:C,$upper(%_loop_count%=%_loop_value%))", loop_output, context)
         # Tests for removing empty elements
         context["baz"] = ["First:A", "Second:B", "Remove", "Third:C"]
         test_output = "1=FIRST:A; 2=SECOND:B; 4=THIRD:C"
-        self.assertScriptResultEquals(
-            "$lenmulti(%baz%)",
-            "4",
-            context,
-        )
-        self.assertScriptResultEquals(
-            "$map(%baz%,$if($eq(%_loop_count%,3),,$upper(%_loop_count%=%_loop_value%)))",
-            test_output,
-            context,
-        )
+        self.assertScriptResultEquals("$lenmulti(%baz%)", "4", context)
+        self.assertScriptResultEquals("$map(%baz%,$if($eq(%_loop_count%,3),,$upper(%_loop_count%=%_loop_value%)))", test_output, context)
         context["baz"] = ["First:A", "Second:B", "Remove", "Third:C"]
-        self.assertScriptResultEquals(
-            "$setmulti(baz,$map(%baz%,$if($eq(%_loop_count%,3),,$upper(%_loop_count%=%_loop_value%))))%baz%",
-            test_output,
-            context,
-        )
-        self.assertScriptResultEquals(
-            "$lenmulti(%baz%)",
-            "3",
-            context,
-        )
-        self.assertScriptResultEquals(
-            "%baz%",
-            test_output,
-            context,
-        )
+        self.assertScriptResultEquals("$setmulti(baz,$map(%baz%,$if($eq(%_loop_count%,3),,$upper(%_loop_count%=%_loop_value%))))%baz%", test_output, context)
+        self.assertScriptResultEquals("$lenmulti(%baz%)", "3", context)
+        self.assertScriptResultEquals("%baz%", test_output, context)
         # Tests with missing inputs
-        self.assertScriptResultEquals(
-            "$map(,$upper(%_loop_count%=%_loop_value%))",
-            "",
-            context,
-        )
-        self.assertScriptResultEquals(
-            "$map(First:A; Second:B; Third:C,)",
-            "",
-            context,
-        )
+        self.assertScriptResultEquals("$map(,$upper(%_loop_count%=%_loop_value%))", "", context)
+        self.assertScriptResultEquals("$map(First:A; Second:B; Third:C,)", "", context)
         # Tests with separator override
-        self.assertScriptResultEquals(
-            "$map(First:A; Second:B; Third:C,$upper(%_loop_count%=%_loop_value%),:)",
-            alternate_output,
-            context,
-        )
+        self.assertScriptResultEquals("$map(First:A; Second:B; Third:C,$upper(%_loop_count%=%_loop_value%),:)", alternate_output, context)
         # Tests with invalid number of arguments
         areg = r"^\d+:\d+:\$map: Wrong number of arguments for \$map: Expected between 2 and 3, "
         with self.assertRaisesRegex(ScriptError, areg):
@@ -1794,39 +1673,15 @@ class ScriptParserTest(PicardTestCase):
         bar_output = "First:A ==> Second:B ==> Third:C"
         alternate_output = "First ==> A; Second ==> B; Third ==> C"
         # Tests with context
-        self.assertScriptResultEquals(
-            "$join(%foo%,%joiner%)",
-            foo_output,
-            context,
-        )
-        self.assertScriptResultEquals(
-            "$join(%bar%,%joiner%)",
-            bar_output,
-            context,
-        )
+        self.assertScriptResultEquals("$join(%foo%,%joiner%)", foo_output, context)
+        self.assertScriptResultEquals("$join(%bar%,%joiner%)", bar_output, context)
         # Tests with static inputs
-        self.assertScriptResultEquals(
-            "$join(First:A; Second:B; Third:C, ==> )",
-            bar_output,
-            context,
-        )
+        self.assertScriptResultEquals("$join(First:A; Second:B; Third:C, ==> )", bar_output, context)
         # Tests with missing inputs
-        self.assertScriptResultEquals(
-            "$join(, ==> )",
-            "",
-            context,
-        )
-        self.assertScriptResultEquals(
-            "$join(First:A; Second:B; Third:C,)",
-            "First:ASecond:BThird:C",
-            context,
-        )
+        self.assertScriptResultEquals("$join(, ==> )", "", context)
+        self.assertScriptResultEquals("$join(First:A; Second:B; Third:C,)", "First:ASecond:BThird:C", context)
         # Tests with separator override
-        self.assertScriptResultEquals(
-            "$join(First:A; Second:B; Third:C, ==> ,:)",
-            alternate_output,
-            context,
-        )
+        self.assertScriptResultEquals("$join(First:A; Second:B; Third:C, ==> ,:)", alternate_output, context)
         # Tests with invalid number of arguments
         areg = r"^\d+:\d+:\$join: Wrong number of arguments for \$join: Expected between 2 and 3, "
         with self.assertRaisesRegex(ScriptError, areg):
@@ -1921,7 +1776,7 @@ class ScriptParserTest(PicardTestCase):
         # Platform dependent testing because different platforms (both os and Python version)
         # support some format arguments differently.
         possible_tests = (
-            '%',  # Hanging % at end of format
+            '%',    # Hanging % at end of format
             '%-d',  # Non zero-padded day
             '%-m',  # Non zero-padded month
             '%3Y',  # Length specifier shorter than string
@@ -1954,7 +1809,7 @@ class ScriptParserTest(PicardTestCase):
         # Platform dependent testing because different platforms (both os and Python version)
         # support some format arguments differently.  Use $datetime function to generate exceptions.
         possible_tests = (
-            '%',  # Hanging % at end of format
+            '%',    # Hanging % at end of format
             '%-d',  # Non zero-padded day
             '%-m',  # Non zero-padded month
             '%3Y',  # Length specifier shorter than string
@@ -2122,6 +1977,12 @@ class ScriptParserTest(PicardTestCase):
         context["bar"] = ""
         context["baz"] = "INVALID"
 
+        # Ensure that `builtins` contains a `gettext_countries` attribute to avoid an `AttributeError`
+        # exception when mocking the function, in case the `picard.i18n` module has not been loaded.
+        # This is required by the $countryname() function in order to translate the country names.
+        if not hasattr(builtins, 'gettext_countries'):
+            builtins.__dict__['gettext_countries'] = None
+
         # Mock function to simulate English locale.
         def mock_gettext_countries_en(arg):
             return arg
@@ -2131,7 +1992,7 @@ class ScriptParserTest(PicardTestCase):
             return "Канада" if arg == 'Canada' else arg
 
         # Test with Russian locale
-        with mock.patch('picard.script.functions.gettext_countries', mock_gettext_countries_ru):
+        with mock.patch('builtins.gettext_countries', mock_gettext_countries_ru):
             self.assertScriptResultEquals("$countryname(ca)", "Canada", context)
             self.assertScriptResultEquals("$countryname(ca,)", "Canada", context)
             self.assertScriptResultEquals("$countryname(ca, )", "Канада", context)
@@ -2141,7 +2002,7 @@ class ScriptParserTest(PicardTestCase):
             self.assertScriptResultEquals("$countryname(fr,yes)", "France", context)
 
         # Reset locale to English for remaining tests
-        with mock.patch('picard.script.functions.gettext_countries', mock_gettext_countries_en):
+        with mock.patch('builtins.gettext_countries', mock_gettext_countries_en):
             self.assertScriptResultEquals("$countryname(ca,)", "Canada", context)
             self.assertScriptResultEquals("$countryname(ca,yes)", "Canada", context)
             self.assertScriptResultEquals("$countryname(ca)", "Canada", context)

@@ -2,8 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
+# Copyright (C) 2019-2021 Laurent Monin
 # Copyright (C) 2019-2021, 2023 Philipp Wolfer
-# Copyright (C) 2019-2022, 2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -24,16 +24,14 @@ import logging
 import os
 import sys
 import unittest
-from unittest.mock import Mock
 
 from test.picardtestcase import PicardTestCase
 
 import picard
 from picard.const import USER_PLUGIN_DIR
-from picard.extension_points import unregister_module_extensions
 from picard.plugin import (
-    PluginFunctions,
     PluginWrapper,
+    _unregister_module_extensions,
 )
 from picard.pluginmanager import (
     PluginManager,
@@ -92,7 +90,7 @@ _testplugins = _get_test_plugins()
 
 def unload_plugin(plugin_name):
     """for testing purposes"""
-    unregister_module_extensions(plugin_name)
+    _unregister_module_extensions(plugin_name)
     if hasattr(picard.plugins, plugin_name):
         delattr(picard.plugins, plugin_name)
     if plugin_name in sys.modules:
@@ -100,12 +98,17 @@ def unload_plugin(plugin_name):
 
 
 class TestPicardPluginsCommon(PicardTestCase):
+
     def setUp(self):
         super().setUp()
         logging.disable(logging.ERROR)
 
+    def tearDown(self):
+        pass
+
 
 class TestPicardPluginsCommonTmpDir(TestPicardPluginsCommon):
+
     def setUp(self):
         super().setUp()
         self.tmp_directory = self.mktmpdir()
@@ -113,7 +116,9 @@ class TestPicardPluginsCommonTmpDir(TestPicardPluginsCommon):
 
 
 class TestPicardPluginManager(TestPicardPluginsCommon):
+
     def test_compatible_api_version(self):
+
         # use first element from picard.api_versions, it should be compatible
         api_versions = picard.api_versions[:1]
         expected = {Version.from_string(v) for v in api_versions}
@@ -134,13 +139,13 @@ class TestPicardPluginManager(TestPicardPluginsCommon):
     def test_plugin_name_from_path(self):
         for name, path in _testplugins.items():
             self.assertEqual(
-                _plugin_name_from_path(path),
-                'dummyplugin',
-                "failed to get plugin name from %s: %r" % (name, path),
+                _plugin_name_from_path(path), 'dummyplugin',
+                "failed to get plugin name from %s: %r" % (name, path)
             )
 
 
 class TestPicardPluginsInstall(TestPicardPluginsCommonTmpDir):
+
     def _test_plugin_install(self, name):
         plugin_path = _testplugins[name]
         pm = PluginManager(plugins_directory=self.tmp_directory)
@@ -152,7 +157,6 @@ class TestPicardPluginsInstall(TestPicardPluginsCommonTmpDir):
 
         # if module is properly loaded, this should work
         from picard.plugins.dummyplugin import DummyPlugin
-
         DummyPlugin()
 
         # Remove plugin again
@@ -177,7 +181,6 @@ class TestPicardPluginsInstall(TestPicardPluginsCommonTmpDir):
 
         # if module is properly loaded, this should work
         from picard.plugins.dummyplugin import DummyPlugin
-
         DummyPlugin()
 
         # Remove plugin again
@@ -225,6 +228,7 @@ class TestPicardPluginsInstall(TestPicardPluginsCommonTmpDir):
 
 
 class TestPicardPluginsLoad(TestPicardPluginsCommonTmpDir):
+
     def setUp(self):
         super().setUp()
         self.pm = PluginManager(plugins_directory=self.tmp_directory)
@@ -249,7 +253,6 @@ class TestPicardPluginsLoad(TestPicardPluginsCommonTmpDir):
 
         # if module is properly loaded, this should work
         from picard.plugins.dummyplugin import DummyPlugin
-
         DummyPlugin()
 
     # singlefile
@@ -277,40 +280,12 @@ class TestPicardPluginsLoad(TestPicardPluginsCommonTmpDir):
 
 
 class TestPluginWrapper(PicardTestCase):
+
     def test_is_user_installed(self):
-        manifest = {'PLUGIN_NAME': 'foo'}
+        manifest = {
+            'PLUGIN_NAME': 'foo'
+        }
         user_plugin = PluginWrapper({}, USER_PLUGIN_DIR, manifest_data=manifest)
         self.assertTrue(user_plugin.is_user_installed)
         system_plugin = PluginWrapper({}, '/other/path/plugins', manifest_data=manifest)
         self.assertFalse(system_plugin.is_user_installed)
-
-
-class TestPluginFunctions(PicardTestCase):
-    def setUp(self):
-        super().setUp()
-        self.set_config_values(
-            {
-                'enabled_plugins': [],
-            }
-        )
-
-    def test_register_order(self):
-        pfs = PluginFunctions(label="test")
-        self.assertEqual(pfs.functions, {})
-        pfs.register('m', 'f1', priority=0)
-        pfs.register('m', 'f2', priority=0)
-        self.assertEqual(list(pfs._get_functions()), ['f1', 'f2'])
-        pfs.register('m', 'f3', priority=1)
-        pfs.register('m', 'f4', priority=-1)
-        self.assertEqual(list(pfs._get_functions()), ['f3', 'f1', 'f2', 'f4'])
-
-    def test_run_args(self):
-        testfunc1 = Mock()
-        testfunc2 = Mock()
-
-        pfs = PluginFunctions(label="test")
-        pfs.register('m', testfunc1)
-        pfs.register('m', testfunc2)
-        pfs.run(1, k=2)
-        testfunc1.assert_called_with(1, k=2)
-        testfunc2.assert_called_with(1, k=2)

@@ -3,9 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2018 Yvan Rivière
-# Copyright (C) 2018, 2020-2021, 2024 Laurent Monin
-# Copyright (C) 2018, 2020-2022 Philipp Wolfer
-# Copyright (C) 2024 Yohay
+# Copyright (C) 2018, 2020-2021 Laurent Monin
+# Copyright (C) 2018, 2020-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -24,10 +23,7 @@
 
 from functools import partial
 
-from PyQt6 import (
-    QtCore,
-    QtWidgets,
-)
+from PyQt5 import QtWidgets
 
 from picard import log
 from picard.album import Album
@@ -35,7 +31,6 @@ from picard.cluster import (
     Cluster,
     ClusterList,
 )
-from picard.i18n import N_
 from picard.script import (
     ScriptError,
     ScriptParser,
@@ -45,26 +40,28 @@ from picard.util import iter_unique
 
 
 class ScriptsMenu(QtWidgets.QMenu):
-    def __init__(self, scripts, title, parent=None):
-        super().__init__(title, parent=parent)
-        self.tagger = QtCore.QCoreApplication.instance()
+
+    def __init__(self, scripts, *args):
+        super().__init__(*args)
 
         for script in scripts:
-            action = self.addAction(script.name)
+            action = self.addAction(script[1])
             action.triggered.connect(partial(self._run_script, script))
 
     def _run_script(self, script):
+        s_name = script[1]
+        s_text = script[3]
         parser = ScriptParser()
 
         for obj in self._iter_unique_metadata_objects():
             try:
-                parser.eval(script.content, obj.metadata)
+                parser.eval(s_text, obj.metadata)
                 obj.update()
             except ScriptError as e:
-                log.exception('Error running tagger script "%s" on object %r', script.name, obj)
+                log.exception('Error running tagger script "%s" on object %r', s_name, obj)
                 msg = N_('Script error in "%(script)s": %(message)s')
                 mparms = {
-                    'script': script.name,
+                    'script': s_name,
                     'message': str(e),
                 }
                 self.tagger.window.set_statusbar_message(msg, mparms)

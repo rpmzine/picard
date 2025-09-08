@@ -3,10 +3,10 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2007 Lukáš Lalinský
-# Copyright (C) 2014, 2018, 2020, 2024 Laurent Monin
+# Copyright (C) 2014, 2018, 2020 Laurent Monin
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2018 Shen-Ta Hsieh
-# Copyright (C) 2018-2020, 2023 Philipp Wolfer
+# Copyright (C) 2018-2020 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -21,9 +21,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-
-
-from picard.i18n import N_
 
 
 # List of available user interface languages

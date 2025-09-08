@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2016 Rahul Raturi
-# Copyright (C) 2018, 2020-2021, 2023-2024 Laurent Monin
+# Copyright (C) 2018, 2020-2021 Laurent Monin
 # Copyright (C) 2018-2022 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
@@ -21,17 +21,15 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from picard.config import get_config
-from picard.i18n import N_
+from PyQt5 import QtCore
+
+from picard.config import (
+    Option,
+    get_config,
+)
 from picard.mbjson import artist_to_metadata
 from picard.metadata import Metadata
 
-from picard.ui.columns import (
-    Column,
-    ColumnAlign,
-    Columns,
-    ColumnSortType,
-)
 from picard.ui.searchdialog import (
     Retry,
     SearchDialog,
@@ -39,43 +37,41 @@ from picard.ui.searchdialog import (
 
 
 class ArtistSearchDialog(SearchDialog):
+
     dialog_header_state = 'artistsearchdialog_header_state'
 
+    options = [
+        Option('persist', dialog_header_state, QtCore.QByteArray())
+    ]
+
     def __init__(self, parent):
-        self.columns = Columns(
-            (
-                Column(N_("Name"), 'name', sort_type=ColumnSortType.NAT, width=150),
-                Column(N_("Comment"), '~artistcomment'),
-                Column(N_("Type"), 'type'),
-                Column(N_("Gender"), 'gender'),
-                Column(N_("Area"), 'area'),
-                Column(N_("Begin"), 'begindate'),
-                Column(N_("Begin Area"), 'beginarea'),
-                Column(N_("End"), 'enddate'),
-                Column(N_("End Area"), 'endarea'),
-                Column(N_("Score"), 'score', sort_type=ColumnSortType.NAT, align=ColumnAlign.RIGHT, width=50),
-            ),
-            default_width=100,
-        )
         super().__init__(
             parent,
-            N_("Artist Search Dialog"),
-            accept_button_title=N_("Show in browser"),
-            search_type='artist',
-        )
+            accept_button_title=_("Show in browser"),
+            search_type='artist')
+        self.setWindowTitle(_("Artist Search Dialog"))
+        self.columns = [
+            ('name',        _("Name")),
+            ('type',        _("Type")),
+            ('gender',      _("Gender")),
+            ('area',        _("Area")),
+            ('begindate',   _("Begin")),
+            ('beginarea',   _("Begin Area")),
+            ('enddate',     _("End")),
+            ('endarea',     _("End Area")),
+            ('score',       _("Score")),
+        ]
 
     def search(self, text):
         self.retry_params = Retry(self.search, text)
         self.search_box_text(text)
         self.show_progress()
         config = get_config()
-        self.tagger.mb_api.find_artists(
-            self.handle_reply,
-            query=text,
-            search=True,
-            advanced_search=self.use_advanced_search,
-            limit=config.setting['query_limit'],
-        )
+        self.tagger.mb_api.find_artists(self.handle_reply,
+                                        query=text,
+                                        search=True,
+                                        advanced_search=self.use_advanced_search,
+                                        limit=config.setting['query_limit'])
 
     def retry(self):
         self.retry_params.function(self.retry_params.query)
@@ -100,15 +96,21 @@ class ArtistSearchDialog(SearchDialog):
             artist = Metadata()
             artist_to_metadata(node, artist)
             artist['score'] = node['score']
-            artist['~artistcomment'] = node.get('disambiguation', '')
             self.search_results.append(artist)
 
     def display_results(self):
         self.prepare_table()
         for row, artist in enumerate(self.search_results):
             self.table.insertRow(row)
-            for pos, c in enumerate(self.columns):
-                self.set_table_item_value(row, pos, c, artist)
+            self.set_table_item(row, 'name',      artist, 'name')
+            self.set_table_item(row, 'type',      artist, 'type')
+            self.set_table_item(row, 'gender',    artist, 'gender')
+            self.set_table_item(row, 'area',      artist, 'area')
+            self.set_table_item(row, 'begindate', artist, 'begindate')
+            self.set_table_item(row, 'beginarea', artist, 'beginarea')
+            self.set_table_item(row, 'enddate',   artist, 'enddate')
+            self.set_table_item(row, 'endarea',   artist, 'endarea')
+            self.set_table_item(row, 'score',     artist, 'score')
         self.show_table(sort_column='score')
 
     def accept_event(self, rows):

@@ -8,10 +8,9 @@
 # Copyright (C) 2018-2023 Philipp Wolfer
 # Copyright (C) 2019 Michael Wiencek
 # Copyright (C) 2020 dukeyin
-# Copyright (C) 2020, 2023, 2025 David Kellner
+# Copyright (C) 2020, 2023 David Kellner
 # Copyright (C) 2021, 2025 Bob Swift
 # Copyright (C) 2021 Vladislav Karbovskii
-# Copyright (C) 2024 Rakim Middya
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -102,7 +101,6 @@ _RELEASE_TO_METADATA = {
 }
 
 _ARTIST_TO_METADATA = {
-    'disambiguation': '~artistcomment',
     'gender': 'gender',
     'name': 'name',
     'type': 'type',
@@ -148,7 +146,7 @@ def _relation_attributes(relation):
 def _relations_to_metadata_target_type_artist(relation, m, context):
     artist = relation['artist']
     translated_name, sort_name = _translate_artist_node(artist, config=context.config)
-    has_translation = translated_name != artist['name']
+    has_translation = (translated_name != artist['name'])
     if not has_translation and context.use_credited_as and 'target-credit' in relation:
         credited_as = relation['target-credit']
         if credited_as:
@@ -156,9 +154,7 @@ def _relations_to_metadata_target_type_artist(relation, m, context):
     reltype = relation['type']
     attribs = _relation_attributes(relation)
     if reltype in {'vocal', 'instrument', 'performer'}:
-        if (reltype == 'instrument' and context.use_instrument_credits) or (
-            reltype == 'vocal' and context.use_vocal_credits
-        ):
+        if context.use_instrument_credits:
             attr_credits = relation.get('attribute-credits', {})
         else:
             attr_credits = {}
@@ -237,7 +233,7 @@ _RELATIONS_TO_METADATA_TARGET_TYPE_FUNC = {
     'artist': RelFunc(func=_relations_to_metadata_target_type_artist),
     'series': RelFunc(
         func=_relations_to_metadata_target_type_series,
-        clear_metadata_first=True,
+        clear_metadata_first=True
     ),
     'url': RelFunc(func=_relations_to_metadata_target_type_url),
     'work': RelFunc(func=_relations_to_metadata_target_type_work),
@@ -252,7 +248,6 @@ def _relations_to_metadata(relations, m, instrumental=False, config=None, entity
         instrumental=instrumental,
         use_credited_as=not config.setting['standardize_artists'],
         use_instrument_credits=not config.setting['standardize_instruments'],
-        use_vocal_credits=not config.setting['standardize_vocals'],
         metadata_was_cleared=dict(),
     )
     for relation in relations:
@@ -310,13 +305,12 @@ def _translate_artist_node(node, config=None):
     translated_name, sort_name = None, None
     if config.setting['translate_artist_names']:
         if config.setting['translate_artist_names_script_exception']:
-            log_text = 'Script alpha characters found in "{0}": '.format(
-                node['name'],
-            )
+            log_text = 'Script alpha characters found in "{0}": '.format(node['name'],)
             detected_scripts = detect_script_weighted(node['name'])
             if detected_scripts:
                 log_text += "; ".join(
-                    "{0} ({1:.1f}%)".format(scr_id, detected_scripts[scr_id] * 100) for scr_id in detected_scripts
+                    "{0} ({1:.1f}%)".format(scr_id, detected_scripts[scr_id] * 100)
+                    for scr_id in detected_scripts
                 )
             else:
                 log_text += "None"
@@ -325,7 +319,8 @@ def _translate_artist_node(node, config=None):
                 script_exceptions = config.setting['script_exceptions']
                 if script_exceptions:
                     log_text = " found in selected scripts: " + "; ".join(
-                        "{0} ({1}%)".format(scr[0], scr[1]) for scr in script_exceptions
+                        "{0} ({1}%)".format(scr[0], scr[1])
+                        for scr in script_exceptions
                     )
                     for script_id, script_weighting in script_exceptions:
                         if script_id not in detected_scripts:
@@ -374,7 +369,7 @@ def artist_credit_from_node(node):
             # Add artist's country code if specified, otherwise 'XX' (Unknown Country)
             artist_countries.append(artist['country'] if 'country' in artist and artist['country'] else 'XX')
         translated_name, sort_name = _translate_artist_node(artist, config=config)
-        has_translation = translated_name != artist['name']
+        has_translation = (translated_name != artist['name'])
         if has_translation:
             name = translated_name
         elif use_credited_as and 'name' in artist_info:
@@ -647,14 +642,14 @@ def add_secondary_release_types(node, m):
 def add_genres_from_node(node, obj):
     if obj is None:
         return
-    if 'tags' in node:
-        add_tags(node['tags'], obj)
-    if 'user-tags' in node:
-        add_user_tags(node['user-tags'], obj)
     if 'genres' in node:
         add_genres(node['genres'], obj)
+    if 'tags' in node:
+        add_genres(node['tags'], obj)
     if 'user-genres' in node:
         add_user_genres(node['user-genres'], obj)
+    if 'user-tags' in node:
+        add_user_genres(node['user-tags'], obj)
 
 
 def add_genres(node, obj):
@@ -665,16 +660,6 @@ def add_genres(node, obj):
 def add_user_genres(node, obj):
     for tag in node:
         obj.add_genre(tag['name'], 1)
-
-
-def add_tags(node, obj):
-    for tag in node:
-        obj.add_folksonomy_tag(tag['name'], tag['count'])
-
-
-def add_user_tags(node, obj):
-    for tag in node:
-        obj.add_folksonomy_tag(tag['name'], 1)
 
 
 def add_isrcs_to_metadata(node, metadata):

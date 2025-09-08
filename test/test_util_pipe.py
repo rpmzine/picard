@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2022 skelly37
-# Copyright (C) 2022-2023 Philipp Wolfer
+# Copyright (C) 2023 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -18,7 +18,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
-
 
 import concurrent.futures
 from platform import python_version
@@ -55,7 +54,7 @@ class TestPipe(PicardTestCase):
         pipe_handler = pipe.Pipe(self.NAME, self.VERSION)
         try:
             plistener = __pool.submit(pipe_listener, pipe_handler)
-            time.sleep(0.2)
+            time.sleep(.2)
             res = ""
 
             # handle the write/read processes
@@ -65,8 +64,9 @@ class TestPipe(PicardTestCase):
             except concurrent.futures._base.TimeoutError:
                 pass
 
-            self.assertEqual(res, message, "Data is sent and read correctly")
+            self.assertEqual(res, message,
+                            "Data is sent and read correctly")
         finally:
-            time.sleep(0.2)
+            time.sleep(.2)
             pipe_handler.stop()
             __pool.shutdown()

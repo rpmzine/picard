@@ -2,7 +2,7 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2013, 2018, 2020-2022 Laurent Monin
+# Copyright (C) 2013, 2018, 2020-2021 Laurent Monin
 # Copyright (C) 2016 barami
 # Copyright (C) 2018 Wieland Hoffmann
 # Copyright (C) 2020 Philipp Wolfer
@@ -28,6 +28,7 @@ from picard.util import parse_amazon_url
 
 
 class ParseAmazonUrlTest(PicardTestCase):
+
     def test_1(self):
         url = 'http://www.amazon.com/dp/020530902X'
         expected = {'asin': '020530902X', 'host': 'amazon.com'}

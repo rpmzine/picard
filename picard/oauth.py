@@ -8,7 +8,7 @@
 # Copyright (C) 2015, 2018, 2021-2022, 2024 Philipp Wolfer
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Frederik “Freso” S. Olesen
-# Copyright (C) 2018-2024 Laurent Monin
+# Copyright (C) 2018-2022 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -24,7 +24,6 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
-
 from base64 import urlsafe_b64encode
 from functools import partial
 from hashlib import sha256
@@ -39,7 +38,6 @@ from picard.const import (
     MUSICBRAINZ_OAUTH_CLIENT_ID,
     MUSICBRAINZ_OAUTH_CLIENT_SECRET,
 )
-from picard.i18n import gettext as _
 from picard.util import (
     build_qurl,
     load_json,
@@ -53,7 +51,8 @@ class OAuthInvalidStateError(Exception):
     pass
 
 
-class OAuthManager:
+class OAuthManager(object):
+
     def __init__(self, webservice):
         self.webservice = webservice
         # Associates state tokens with callbacks
@@ -218,10 +217,8 @@ class OAuthManager:
 
     def url(self, path=None, params=None):
         return build_qurl(
-            self.host,
-            self.port,
-            path=path,
-            queryargs=params,
+            self.host, self.port, path=path,
+            queryargs=params
         )
 
     def _create_code_challenge(self):
@@ -248,8 +245,8 @@ class OAuthManager:
             callback = self.__states[state]
             del self.__states[state]
             return callback
-        except KeyError as e:
-            raise OAuthInvalidStateError from e
+        except KeyError:
+            raise OAuthInvalidStateError
 
     def get_authorization_url(self, scopes, callback: callable):
         params = {

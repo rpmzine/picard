@@ -2,9 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2019, 2024 Philipp Wolfer
-# Copyright (C) 2020-2022 Laurent Monin
-# Copyright (C) 2024 Suryansh Shakya
+# Copyright (C) 2019 Philipp Wolfer
+# Copyright (C) 2020-2021 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -22,9 +21,11 @@
 
 
 import os
+import unittest
 
 from picard import config
 from picard.formats.ac3 import AC3File
+from picard.formats.mutagenext.ac3 import native_ac3
 from picard.metadata import Metadata
 
 from .common import (
@@ -39,11 +40,10 @@ class AC3WithAPETest(CommonApeTests.ApeTestCase):
     testfile = 'test.ac3'
     supports_ratings = False
     expected_info = {
-        'length': 104,
+        'length': 106,
         '~bitrate': '192.0',
         '~sample_rate': '44100',
         '~channels': '2',
-        '~filesize': '2506',
     }
     unexpected_info = ['~video']
 
@@ -52,6 +52,7 @@ class AC3WithAPETest(CommonApeTests.ApeTestCase):
         config.setting['ac3_save_ape'] = True
         config.setting['remove_ape_from_ac3'] = True
 
+    @unittest.skipUnless(native_ac3, "mutagen.ac3 not available")
     def test_info(self):
         super().test_info()
 
@@ -76,9 +77,9 @@ class AC3NoTagsTest(CommonTests.BaseFileTestCase):
 
     def test_remove_ape_tags(self):
         config.setting['remove_ape_from_ac3'] = True
-        metadata = Metadata(
-            {'artist': 'Foo'},
-        )
+        metadata = Metadata({
+            'artist': 'Foo'
+        })
         metadata = save_and_load_metadata(self.filename, metadata)
         self.assertEqual('AC-3', metadata['~format'])
         self.assertNotIn('title', metadata)
@@ -89,8 +90,9 @@ class AC3NoTagsTest(CommonTests.BaseFileTestCase):
         self.assertEqual('AC-3', metadata['~format'])
         metadata = load_metadata(os.path.join('test', 'data', 'test-apev2.ac3'))
         self.assertEqual('AC-3 (APEv2)', metadata['~format'])
-        metadata = load_metadata(os.path.join('test', 'data', 'test.eac3'))
-        self.assertEqual('Enhanced AC-3', metadata['~format'])
+        if native_ac3:
+            metadata = load_metadata(os.path.join('test', 'data', 'test.eac3'))
+            self.assertEqual('Enhanced AC-3', metadata['~format'])
 
     def test_supports_tag(self):
         config.setting['ac3_save_ape'] = True
@@ -99,14 +101,14 @@ class AC3NoTagsTest(CommonTests.BaseFileTestCase):
         self.assertFalse(AC3File.supports_tag('title'))
 
 
+@unittest.skipUnless(native_ac3, "mutagen.ac3 not available")
 class EAC3Test(CommonTests.SimpleFormatsTestCase):
     testfile = 'test.eac3'
     expected_info = {
         '~format': 'Enhanced AC-3',
-        'length': 104,
+        'length': 107,
         '~sample_rate': '44100',
         '~channels': '2',
-        '~filesize': '2506',
     }
     unexpected_info = ['~video']
 

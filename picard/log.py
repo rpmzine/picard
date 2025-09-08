@@ -3,14 +3,13 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2007, 2011 Lukáš Lalinský
-# Copyright (C) 2008-2010, 2019, 2021-2024 Philipp Wolfer
+# Copyright (C) 2008-2010, 2019, 2021, 2023 Philipp Wolfer
 # Copyright (C) 2012-2013 Michael Wiencek
-# Copyright (C) 2013, 2015, 2018-2021, 2023-2024 Laurent Monin
+# Copyright (C) 2013, 2015, 2018-2021, 2023 Laurent Monin
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2017 Sophist-UK
 # Copyright (C) 2018 Wieland Hoffmann
 # Copyright (C) 2021 Gabriel Ferreira
-# Copyright (C) 2024 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -34,21 +33,15 @@ from collections import (
 )
 from importlib.machinery import PathFinder
 import logging
-from pathlib import (
-    Path,
-    PurePath,
-)
+from pathlib import Path
 from threading import Lock
 
-from PyQt6 import QtCore
+from PyQt5 import QtCore
 
-from picard.const import USER_PLUGIN_DIR
 from picard.const.sys import (
     FROZEN_TEMP_PATH,
     IS_FROZEN,
 )
-from picard.debug_opts import DebugOpt
-from picard.i18n import N_
 
 
 # Get the absolute path for the picard module
@@ -62,56 +55,36 @@ else:
         # fallback to current file’s parent (works for editable installs)
         picard_module_path = Path(__file__).parent.resolve()
 
-if not picard_module_path.is_dir():
-    picard_module_path = picard_module_path.parent
-
 _MAX_TAIL_LEN = 10**6
 
-_DEFAULT_LOG_LEVEL = logging.INFO
+
+def set_level(level):
+    main_logger.setLevel(level)
 
 
 def get_effective_level():
     return main_logger.getEffectiveLevel()
 
 
-def set_verbosity(level, save_to_config=False):
-    try:
-        main_logger.setLevel(level)
-    except ValueError as e:
-        main_logger.error(e)
-        main_logger.setLevel(_DEFAULT_LOG_LEVEL)
-
-    if save_to_config:
-        # import here to avoid circular imports
-        from picard.config import get_config
-
-        config = get_config()
-        config.setting['log_verbosity'] = get_effective_level()
-
-
-def is_debug():
-    return get_effective_level() == logging.DEBUG
-
-
 _feat = namedtuple('_feat', ['name', 'prefix', 'color_key'])
 
-levels_features = OrderedDict(
-    [
-        (logging.ERROR, _feat(N_('Error'), 'E', 'log_error')),
-        (logging.WARNING, _feat(N_('Warning'), 'W', 'log_warning')),
-        (logging.INFO, _feat(N_('Info'), 'I', 'log_info')),
-        (logging.DEBUG, _feat(N_('Debug'), 'D', 'log_debug')),
-    ]
-)
+levels_features = OrderedDict([
+    (logging.ERROR,   _feat(N_('Error'),   'E', 'log_error')),
+    (logging.WARNING, _feat(N_('Warning'), 'W', 'log_warning')),
+    (logging.INFO,    _feat(N_('Info'),    'I', 'log_info')),
+    (logging.DEBUG,   _feat(N_('Debug'),   'D', 'log_debug')),
+])
 
 
 # COMMON CLASSES
 
 
-TailLogTuple = namedtuple('TailLogTuple', ['pos', 'message', 'level'])
+TailLogTuple = namedtuple(
+    'TailLogTuple', ['pos', 'message', 'level'])
 
 
 class TailLogHandler(logging.Handler):
+
     def __init__(self, log_queue, tail_logger, log_queue_lock):
         super().__init__()
         self.log_queue = log_queue
@@ -125,7 +98,7 @@ class TailLogHandler(logging.Handler):
                 TailLogTuple(
                     self.pos,
                     self.format(record),
-                    record.levelno,
+                    record.levelno
                 )
             )
             self.pos += 1
@@ -136,7 +109,7 @@ def _calculate_bounds(previous_position, first_position, last_position, queue_le
     # If first item of the queue is bigger than prev, use first item position - 1 as prev
     # e.g. queue = [8, 9, 10] , prev = 6, new_prev = 8-1 = 7
     if previous_position < first_position:
-        previous_position = first_position - 1
+        previous_position = first_position-1
 
     # The offset of the first item in the queue is
     # equal to the length of the queue, minus the length to be printed
@@ -164,9 +137,7 @@ class TailLogger(QtCore.QObject):
     def contents(self, prev=-1):
         with self._queue_lock:
             if self._log_queue:
-                offset, length = _calculate_bounds(
-                    prev, self._log_queue[0].pos, self._log_queue[-1].pos, len(self._log_queue)
-                )
+                offset, length = _calculate_bounds(prev, self._log_queue[0].pos, self._log_queue[-1].pos, len(self._log_queue))
 
                 if offset >= 0:
                     yield from (self._log_queue[i] for i in range(offset, length))
@@ -187,7 +158,7 @@ main_logger = logging.getLogger('main')
 # do not pass logging messages to the handlers of ancestor loggers (PICARD-2651)
 main_logger.propagate = False
 
-main_logger.setLevel(_DEFAULT_LOG_LEVEL)
+main_logger.setLevel(logging.INFO)
 
 
 def name_filter(record):
@@ -196,26 +167,15 @@ def name_filter(record):
     # It provides a significant but short name from the filepath of the module
     path = Path(record.pathname).with_suffix('')
     # PyInstaller paths are already relative
-    if path.is_relative_to(picard_module_path):
-        path = path.resolve().relative_to(picard_module_path)
-
-    if path.is_relative_to(USER_PLUGIN_DIR) and not DebugOpt.PLUGIN_FULLPATH.enabled:
-        path = path.resolve().relative_to(USER_PLUGIN_DIR)
-        parts = list(path.parts)
-        parts.insert(0, 'plugins')
-        path = Path(*parts)
-
-    parts = list(path.parts)
-    if parts[-1] == '__init__':
-        del parts[-1]
-    if parts[0] == path.anchor:
-        parts[0] = '/'
-    # Remove the plugin module file if the file name is the same as
-    # the immediately preceeding plugin zip file name, similar to the
-    # way that the final `__init__.py` file is removed.
-    if len(parts) > 1 and parts[-1] + '.zip' == parts[-2]:
-        del parts[-1]
-    record.name = str(PurePath(*parts))
+    # FIXME: With Python 3.9 this should better use
+    # path.is_relative_to(picard_module_path.parent)
+    # to avoid the exception handling.
+    if path.is_absolute():
+        try:
+            path = path.resolve().relative_to(picard_module_path.parent)
+        except ValueError:
+            pass
+    record.name = '/'.join(p for p in path.parts if p != '__init__')
     return True
 
 
@@ -257,7 +217,7 @@ history_logger = logging.getLogger('history')
 # do not pass logging messages to the handlers of ancestor loggers (PICARD-2651)
 history_logger.propagate = False
 
-history_logger.setLevel(_DEFAULT_LOG_LEVEL)
+history_logger.setLevel(logging.INFO)
 
 history_tail = TailLogger(_MAX_TAIL_LEN)
 

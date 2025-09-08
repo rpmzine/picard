@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2004 Robert Kaye
 # Copyright (C) 2006-2009, 2011-2013, 2017 Lukáš Lalinský
-# Copyright (C) 2007-2011, 2015, 2018-2024 Philipp Wolfer
+# Copyright (C) 2007-2011, 2015, 2018-2023 Philipp Wolfer
 # Copyright (C) 2008 Gary van der Merwe
 # Copyright (C) 2008-2009 Nikolai Prokoschenko
 # Copyright (C) 2009 Carlin Mangar
@@ -17,7 +17,7 @@
 # Copyright (C) 2013 Calvin Walton
 # Copyright (C) 2013-2014 Ionuț Ciocîrlan
 # Copyright (C) 2013-2014, 2017, 2021 Sophist-UK
-# Copyright (C) 2013-2014, 2017-2024 Laurent Monin
+# Copyright (C) 2013-2014, 2017-2022 Laurent Monin
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016 Ville Skyttä
 # Copyright (C) 2016-2018 Sambhav Kothari
@@ -26,9 +26,7 @@
 # Copyright (C) 2020 Ray Bouchard
 # Copyright (C) 2020-2021 Gabriel Ferreira
 # Copyright (C) 2021 Petit Minion
-# Copyright (C) 2021, 2023, 2025 Bob Swift
-# Copyright (C) 2024 Giorgio Fontanive
-# Copyright (C) 2024 Suryansh Shakya
+# Copyright (C) 2021, 2023 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -58,41 +56,33 @@ import re
 import shutil
 import time
 
-from mutagen import MutagenError
+from mutagen._util import MutagenError
+
+from PyQt5 import QtCore
 
 from picard import (
     PICARD_APP_NAME,
     log,
 )
 from picard.config import get_config
-from picard.const.defaults import DEFAULT_TIME_FORMAT
+from picard.const import DEFAULT_TIME_FORMAT
 from picard.const.sys import (
     IS_MACOS,
     IS_WIN,
 )
-from picard.i18n import (
-    N_,
-    gettext as _,
-)
-from picard.item import MetadataItem
 from picard.metadata import (
     Metadata,
     SimMatchTrack,
 )
-from picard.plugin import PluginFunctions
-from picard.script import get_file_naming_script
-from picard.tags import (
-    calculated_tag_names,
-    file_info_tag_names,
-    preserved_tag_names,
+from picard.plugin import (
+    PluginFunctions,
+    PluginPriority,
 )
-from picard.tags.preserved import UserPreservedTags
+from picard.script import get_file_naming_script
 from picard.util import (
     any_exception_isinstance,
-    bytes2human,
     decode_filename,
     emptydir,
-    encode_filename,
     find_best_match,
     format_time,
     is_absolute_path,
@@ -106,33 +96,28 @@ from picard.util.filenaming import (
     make_short_filename,
     move_ensure_casing,
 )
+from picard.util.preservedtags import PreservedTags
 from picard.util.scripttofilename import script_to_filename_with_metadata
+from picard.util.tags import (
+    CALCULATED_TAGS,
+    PRESERVED_TAGS,
+)
 
-from picard.ui.filter import Filter
-
-
-FILE_COMPARISON_WEIGHTS = {
-    'album': 5,
-    'artist': 4,
-    'date': 4,
-    'format': 2,
-    'isvideo': 2,
-    'length': 10,
-    'releasecountry': 2,
-    'releasetype': 14,
-    'title': 13,
-    'totaltracks': 4,
-}
+from picard.ui.item import Item
 
 
 class FileErrorType(Enum):
+
     UNKNOWN = auto()
     NOTFOUND = auto()
     NOACCESS = auto()
     PARSER = auto()
 
 
-class File(MetadataItem):
+class File(QtCore.QObject, Item):
+
+    metadata_images_changed = QtCore.pyqtSignal()
+
     NAME = None
 
     UNDEFINED = -1
@@ -146,6 +131,21 @@ class File(MetadataItem):
     LOOKUP_ACOUSTID = 2
 
     EXTENSIONS = []
+
+    FILE_INFO_TAGS = ('~bitrate', '~sample_rate', '~channels', '~bits_per_sample', '~format')
+
+    comparison_weights = {
+        'title': 13,
+        'artist': 4,
+        'album': 5,
+        'length': 10,
+        'totaltracks': 4,
+        'releasetype': 14,
+        'releasecountry': 2,
+        'format': 2,
+        'isvideo': 2,
+        'date': 4,
+    }
 
     class PreserveTimesStatError(Exception):
         pass
@@ -165,10 +165,14 @@ class File(MetadataItem):
         self.state = File.PENDING
         self.error_type = FileErrorType.UNKNOWN
 
+        self.orig_metadata = Metadata()
+        self.metadata = Metadata()
+
         self.similarity = 1.0
-        self.parent_item = None
+        self.parent = None
 
         self.lookup_task = None
+        self.item = None
 
         self.acoustid_fingerprint = None
         self.acoustid_length = 0
@@ -195,12 +199,12 @@ class File(MetadataItem):
         return metadata.getall(tag)
 
     def _format_specific_copy(self, metadata, settings=None):
-        """Creates a copy of metadata, but applies format_specific_metadata() to the values."""
+        """Creates a copy of metadata, but applies format_specific_metadata() to the values.
+        """
         copy = Metadata(
             deleted_tags=metadata.deleted_tags,
             images=metadata.images,
-            length=metadata.length,
-        )
+            length=metadata.length)
         for name in metadata:
             copy[name] = self.format_specific_metadata(metadata, name, settings)
         return copy
@@ -213,9 +217,7 @@ class File(MetadataItem):
             self.error_type = FileErrorType.NOACCESS
         elif any_exception_isinstance(error, MutagenError):
             self.error_type = FileErrorType.PARSER
-            self.error_append(
-                _("The file failed to parse, either the file is damaged or has an unsupported file format.")
-            )
+            self.error_append(_("The file failed to parse, either the file is damaged or has an unsupported file format."))
         else:
             self.error_type = FileErrorType.UNKNOWN
         self.error_append(str(error))
@@ -224,8 +226,7 @@ class File(MetadataItem):
         thread.run_task(
             partial(self._load_check, self.filename),
             partial(self._loading_finished, callback),
-            priority=1,
-        )
+            priority=1)
 
     def _load_check(self, filename):
         # Check that file has not been removed since thread was queued
@@ -251,7 +252,6 @@ class File(MetadataItem):
 
             # If loading failed, force format guessing and try loading again
             from picard.formats.util import guess_format
-
             try:
                 alternative_file = guess_format(self.filename)
             except (FileNotFoundError, OSError):
@@ -268,7 +268,6 @@ class File(MetadataItem):
                 else:
                     alternative_file.remove()  # cleanup unused File object
             from picard.formats import supported_extensions
-
             file_name, file_extension = os.path.splitext(self.base_filename)
             if file_extension not in supported_extensions():
                 log.error("Unsupported media file %r wrongly loaded. Removing …", self)
@@ -288,7 +287,6 @@ class File(MetadataItem):
                 self.set_acoustid_fingerprint(fingerprints[0])
         run_file_post_load_processors(self)
         callback(self)
-        Filter.apply_filters()
 
     def _copy_loaded_metadata(self, metadata, postprocessors=None):
         metadata['~length'] = format_time(metadata.length)
@@ -306,22 +304,21 @@ class File(MetadataItem):
                 metadata[m] = getattr(guessed, m)
 
     def _copy_file_info_tags(self, to_metadata, from_metadata):
-        for tag in file_info_tag_names():
-            to_metadata[tag] = from_metadata[tag]
+        for info in self.FILE_INFO_TAGS:
+            to_metadata[info] = from_metadata[info]
 
     def copy_metadata(self, metadata, preserve_deleted=True):
         saved_metadata = {}
 
         # Keep current value for special tags that got calculated from audio content
-        for tag in calculated_tag_names():
+        for tag in CALCULATED_TAGS:
             if tag not in metadata.deleted_tags and self.metadata[tag]:
                 saved_metadata[tag] = self.metadata[tag]
 
         # Keep original values of preserved tags
-        preserved_tags = UserPreservedTags()
-        default_preserved_tags = set(preserved_tag_names())
+        preserved_tags = PreservedTags()
         for tag, values in self.orig_metadata.rawitems():
-            if tag in preserved_tags or tag in default_preserved_tags:
+            if tag in preserved_tags or tag in PRESERVED_TAGS:
                 saved_metadata[tag] = values
         deleted_tags = self.metadata.deleted_tags
         images_changed = self.metadata.images != metadata.images
@@ -351,8 +348,7 @@ class File(MetadataItem):
         thread.run_task(
             partial(self._save_and_rename, self.filename, metadata),
             self._saving_finished,
-            thread_pool=self.tagger.save_thread_pool,
-        )
+            thread_pool=self.tagger.save_thread_pool)
 
     def _preserve_times(self, filename, func):
         """Save filename times before calling func, and set them again"""
@@ -423,7 +419,8 @@ class File(MetadataItem):
     def _saving_finished(self, result=None, error=None):
         # Handle file removed before save
         # Result is None if save was skipped
-        if (self.state == File.REMOVED or self.tagger.stopping) and result is None:
+        if ((self.state == File.REMOVED or self.tagger.stopping)
+                and result is None):
             return
         old_filename = new_filename = self.filename
         if error is not None:
@@ -451,7 +448,7 @@ class File(MetadataItem):
             self.orig_metadata.update(temp_info)
             self.clear_errors()
             self.clear_pending(signal=False)
-            self._update_filesystem_metadata(self.orig_metadata)
+            self._add_path_to_metadata(self.orig_metadata)
             if images_changed:
                 self.metadata_images_changed.emit()
 
@@ -484,8 +481,7 @@ class File(MetadataItem):
             metadata.copy(self.orig_metadata)
             metadata.update(file_metadata)
         (filename, new_metadata) = script_to_filename_with_metadata(
-            naming_format, metadata, file=self, settings=settings
-        )
+            naming_format, metadata, file=self, settings=settings)
         basename = os.path.basename(filename)
         if not basename:
             old_name = os.path.splitext(os.path.basename(self.filename))[0]
@@ -629,39 +625,40 @@ class File(MetadataItem):
             try:
                 shutil.move(old_file_path, new_file_path)
             except OSError as why:
-                log.error("Failed to move %r to %r: %s", old_file_path, new_file_path, why)
+                log.error("Failed to move %r to %r: %s", old_file_path,
+                          new_file_path, why)
 
-    def remove(self, from_parent_item=True):
-        if from_parent_item and self.parent_item:
-            log.debug("Removing %r from %r", self, self.parent_item)
-            self.parent_item.remove_file(self)
+    def remove(self, from_parent=True):
+        if from_parent and self.parent:
+            log.debug("Removing %r from %r", self, self.parent)
+            self.parent.remove_file(self)
         self.tagger.acoustidmanager.remove(self)
         self.state = File.REMOVED
 
-    def move(self, to_parent_item):
+    def move(self, parent):
         # To be able to move a file the target must implement add_file(file)
-        if hasattr(to_parent_item, 'add_file') and to_parent_item != self.parent_item:
-            log.debug("Moving %r from %r to %r", self, self.parent_item, to_parent_item)
+        if hasattr(parent, 'add_file') and parent != self.parent:
+            log.debug("Moving %r from %r to %r", self, self.parent, parent)
             self.clear_lookup_task()
             self.tagger._acoustid.stop_analyze(self)
             new_album = True
-            if self.parent_item:
-                new_album = self.parent_item.album != to_parent_item.album
+            if self.parent:
+                new_album = self.parent.album != parent.album
                 self.clear_pending()
-                self.parent_item.remove_file(self, new_album=new_album)
-            self.parent_item = to_parent_item
-            self.parent_item.add_file(self, new_album=new_album)
+                self.parent.remove_file(self, new_album=new_album)
+            self.parent = parent
+            self.parent.add_file(self, new_album=new_album)
             self.acoustid_update()
             return True
         else:
             return False
 
-    def _move(self, to_parent_item):
-        if to_parent_item != self.parent_item:
-            log.debug("Moving %r from %r to %r", self, self.parent_item, to_parent_item)
-            if self.parent_item:
-                self.parent_item.remove_file(self)
-            self.parent_item = to_parent_item
+    def _move(self, parent):
+        if parent != self.parent:
+            log.debug("Moving %r from %r to %r", self, self.parent, parent)
+            if self.parent:
+                self.parent.remove_file(self)
+            self.parent = parent
             self.acoustid_update()
 
     def set_acoustid_fingerprint(self, fingerprint, length=None):
@@ -680,8 +677,8 @@ class File(MetadataItem):
 
     def acoustid_update(self):
         recording_id = None
-        if self.parent_item and self.parent_item.can_link_fingerprint:
-            recording_id = self.parent_item.orig_metadata['musicbrainz_recordingid']
+        if self.parent and self.parent.can_link_fingerprint:
+            recording_id = self.parent.orig_metadata['musicbrainz_recordingid']
             if not recording_id:
                 recording_id = self.metadata['musicbrainz_recordingid']
         self.tagger.acoustidmanager.update(self, recording_id)
@@ -713,7 +710,11 @@ class File(MetadataItem):
 
             for name in self._tags_to_update(ignored_tags):
                 new_values = self.format_specific_metadata(self.metadata, name, config.setting)
-                if not (new_values or clear_existing_tags or name in self.metadata.deleted_tags):
+                if not (
+                    new_values
+                    or clear_existing_tags
+                    or name in self.metadata.deleted_tags
+                ):
                     continue
                 orig_values = self.orig_metadata.getall(name)
                 if orig_values != new_values:
@@ -724,7 +725,8 @@ class File(MetadataItem):
             else:
                 self.similarity = 1.0
                 if self.state in (File.CHANGED, File.NORMAL):
-                    if self.metadata.images and self.orig_metadata.images != self.metadata.images:
+                    if (self.metadata.images
+                        and self.orig_metadata.images != self.metadata.images):
                         self.state = File.CHANGED
                     else:
                         self.state = File.NORMAL
@@ -732,35 +734,28 @@ class File(MetadataItem):
             log.debug("Updating file %r", self)
             self.update_item()
 
-    @property
     def can_save(self):
         """Return if this object can be saved."""
         return True
 
-    @property
     def can_remove(self):
         """Return if this object can be removed."""
         return True
 
-    @property
     def can_edit_tags(self):
         """Return if this object supports tag editing."""
         return True
 
-    @property
     def can_analyze(self):
         """Return if this object can be fingerprinted."""
         return True
 
-    @property
     def can_autotag(self):
         return True
 
-    @property
     def can_refresh(self):
         return False
 
-    @property
     def can_view_info(self):
         return True
 
@@ -779,27 +774,24 @@ class File(MetadataItem):
             metadata['~format'] = self.NAME
         else:
             metadata['~format'] = self.__class__.__name__.replace('File', '')
-        self._update_filesystem_metadata(metadata)
+        self._add_path_to_metadata(metadata)
 
-    def _update_filesystem_metadata(self, metadata):
+    def _add_path_to_metadata(self, metadata):
         metadata['~dirname'] = os.path.dirname(self.filename)
-        filename_no_ext, extension = os.path.splitext(os.path.basename(self.filename))
-        metadata['~filename'] = filename_no_ext
+        filename, extension = os.path.splitext(os.path.basename(self.filename))
+        metadata['~filename'] = filename
         metadata['~extension'] = extension.lower()[1:]
 
-        filename_encoded = encode_filename(self.filename)
         try:
-            metadata['~filesize'] = os.path.getsize(filename_encoded)
-
-            created = os.path.getctime(filename_encoded)
+            created = os.path.getctime(self.filename)
             created_timestamp = time.strftime(DEFAULT_TIME_FORMAT, time.localtime(created))
             metadata['~file_created_timestamp'] = created_timestamp
 
-            modified = os.path.getmtime(filename_encoded)
+            modified = os.path.getmtime(self.filename)
             modified_timestamp = time.strftime(DEFAULT_TIME_FORMAT, time.localtime(modified))
             metadata['~file_modified_timestamp'] = modified_timestamp
         except OSError as ex:
-            log.error(f"File access error: {ex}")
+            log.error(f"File Timestamps Error: {ex}")
 
     @property
     def state(self):
@@ -824,22 +816,9 @@ class File(MetadataItem):
             return self.base_filename
         elif column == 'covercount':
             return self.cover_art_description()
-        elif column == 'coverdimensions':
-            return self.cover_art_dimensions()
         value = m[column]
         if not value and not get_config().setting['clear_existing_tags']:
             value = self.orig_metadata[column]
-        if column == '~filesize':
-            try:
-                value = bytes2human.binary(value)
-            except ValueError:
-                pass
-        elif column == '~bitrate':
-            try:
-                if value:
-                    value = f"{float(value):.0f} kbps"
-            except (ValueError, TypeError):
-                pass
         return value
 
     def _lookup_finished(self, lookuptype, document, http, error):
@@ -848,11 +827,8 @@ class File(MetadataItem):
         if self.state == File.REMOVED:
             return
         if error:
-            log.error(
-                "Network error encountered during the lookup for %s. Error code: %s",
-                self.filename,
-                error,
-            )
+            log.error("Network error encountered during the lookup for %s. Error code: %s",
+                      self.filename, error)
         try:
             tracks = document['recordings']
         except (KeyError, TypeError):
@@ -862,7 +838,7 @@ class File(MetadataItem):
             self.tagger.window.set_statusbar_message(
                 message,
                 {'filename': self.filename},
-                timeout=3000,
+                timeout=3000
             )
 
         if tracks:
@@ -894,7 +870,10 @@ class File(MetadataItem):
 
     def _match_to_track(self, tracks, threshold=0):
         # multiple matches -- calculate similarities to each of them
-        candidates = (self.metadata.compare_to_track(track, FILE_COMPARISON_WEIGHTS) for track in tracks)
+        candidates = (
+            self.metadata.compare_to_track(track, self.comparison_weights)
+            for track in tracks
+        )
         no_match = SimMatchTrack(similarity=-1, releasegroup=None, release=None, track=None)
         best_match = find_best_match(candidates, no_match)
 
@@ -918,7 +897,7 @@ class File(MetadataItem):
             return
         self.tagger.window.set_statusbar_message(
             N_("Looking up the metadata for file %(filename)s …"),
-            {'filename': self.filename},
+            {'filename': self.filename}
         )
         self.clear_lookup_task()
         metadata = self.metadata
@@ -933,8 +912,7 @@ class File(MetadataItem):
             tracks=metadata['totaltracks'],
             qdur=str(metadata.length // 2000),
             isrc=metadata['isrc'],
-            limit=config.setting['query_limit'],
-        )
+            limit=config.setting['query_limit'])
 
     def clear_lookup_task(self):
         if self.lookup_task:
@@ -955,30 +933,78 @@ class File(MetadataItem):
                 self.update_item(update_selection=False)
 
     def update_item(self, update_selection=True):
-        if self.ui_item:
-            self.ui_item.update(update_selection=update_selection)
+        if self.item:
+            self.item.update(update_selection=update_selection)
 
     def iterfiles(self, save=False):
         yield self
 
 
-file_post_load_processors = PluginFunctions(label='file_post_load_processors')
-file_post_addition_to_track_processors = PluginFunctions(label='file_post_addition_to_track_processors')
-file_post_removal_to_track_processors = PluginFunctions(label='file_post_removal_from_track_processors')
-file_post_save_processors = PluginFunctions(label='file_post_save_processors')
+_file_post_load_processors = PluginFunctions(label='file_post_load_processors')
+_file_post_addition_to_track_processors = PluginFunctions(label='file_post_addition_to_track_processors')
+_file_post_removal_from_track_processors = PluginFunctions(label='file_post_removal_from_track_processors')
+_file_post_save_processors = PluginFunctions(label='file_post_save_processors')
+
+
+def register_file_post_load_processor(function, priority=PluginPriority.NORMAL):
+    """Registers a file-loaded processor.
+
+    Args:
+        function: function to call after file has been loaded, it will be passed the file object
+        priority: optional, PluginPriority.NORMAL by default
+    Returns:
+        None
+    """
+    _file_post_load_processors.register(function.__module__, function, priority)
+
+
+def register_file_post_addition_to_track_processor(function, priority=PluginPriority.NORMAL):
+    """Registers a file-added-to-track processor.
+
+    Args:
+        function: function to call after file addition, it will be passed the track and file objects
+        priority: optional, PluginPriority.NORMAL by default
+    Returns:
+        None
+    """
+    _file_post_addition_to_track_processors.register(function.__module__, function, priority)
+
+
+def register_file_post_removal_from_track_processor(function, priority=PluginPriority.NORMAL):
+    """Registers a file-removed-from-track processor.
+
+    Args:
+        function: function to call after file removal, it will be passed the track and file objects
+        priority: optional, PluginPriority.NORMAL by default
+    Returns:
+        None
+    """
+    _file_post_removal_from_track_processors.register(function.__module__, function, priority)
+
+
+def register_file_post_save_processor(function, priority=PluginPriority.NORMAL):
+    """Registers file saved processor.
+
+    Args:
+        function: function to call after save, it will be passed the file object
+        priority: optional, PluginPriority.NORMAL by default
+    Returns:
+        None
+    """
+    _file_post_save_processors.register(function.__module__, function, priority)
 
 
 def run_file_post_load_processors(file_object):
-    file_post_load_processors.run(file_object)
+    _file_post_load_processors.run(file_object)
 
 
 def run_file_post_addition_to_track_processors(track_object, file_object):
-    file_post_addition_to_track_processors.run(track_object, file_object)
+    _file_post_addition_to_track_processors.run(track_object, file_object)
 
 
 def run_file_post_removal_from_track_processors(track_object, file_object):
-    file_post_removal_to_track_processors.run(track_object, file_object)
+    _file_post_removal_from_track_processors.run(track_object, file_object)
 
 
 def run_file_post_save_processors(file_object):
-    file_post_save_processors.run(file_object)
+    _file_post_save_processors.run(file_object)

@@ -5,7 +5,7 @@
 # Copyright (C) 2004 Robert Kaye
 # Copyright (C) 2006 Lukáš Lalinský
 # Copyright (C) 2018-2020, 2022 Philipp Wolfer
-# Copyright (C) 2019-2021, 2023-2024 Laurent Monin
+# Copyright (C) 2019-2021 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -61,7 +61,8 @@ def script_to_filename_with_metadata(naming_format, metadata, file=None, setting
     replace_dir_separator = settings['replace_dir_separator']
     for name in metadata:
         new_metadata[name] = [
-            sanitize_filename(str(v), repl=replace_dir_separator, win_compat=win_compat) for v in metadata.getall(name)
+            sanitize_filename(str(v), repl=replace_dir_separator, win_compat=win_compat)
+            for v in metadata.getall(name)
         ]
     naming_format = naming_format.replace('\t', '').replace('\n', '')
     filename = ScriptParser().eval(naming_format, new_metadata, file)
@@ -90,5 +91,6 @@ def script_to_filename(naming_format, metadata, file=None, settings=None):
     Returns:
         The filename.
     """
-    (filename, _unused) = script_to_filename_with_metadata(naming_format, metadata, file, settings)
+    (filename, _unused) = script_to_filename_with_metadata(
+        naming_format, metadata, file, settings)
     return filename

@@ -1,22 +1,12 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
 # IDE config files
 .pydevproject
 .project
 .idea/
 .vscode/
 
-# Environments
-.env
+# virtualenv
 .venv
-env/
 venv/
-ENV/
-env.bak/
-venv.bak/
 .python-version
 
 # OS generated files
@@ -26,41 +16,29 @@ Thumbs.db
 Thumbs.db:encryptable
 
 # Files generated during build, test and deployment
+.coverage
 *.dll
 *.dylib
 *.exe
+*.pyc
+*.pyd
 *.so
 *.mo
 appxmanifest.xml
 build/
+coverage.xml
 dist/
 installer/picard-setup.nsi
 installer/i18n/out/*.nsh
-picard/locale/
+locale/
 org.musicbrainz.Picard.appdata.xml
 org.musicbrainz.Picard.desktop
 picard.egg-info
-*.egg-info/
 po/attributes/attributes.pot
 po/countries/countries.pot
 scripts/picard
 /tagger.py
 win-version-info.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
 
 # Other files
 .*.sw[a-z]
@@ -68,6 +46,3 @@ cover/
 appledev.p12
 build.cfg
 .weblate.ini
-
-# Ruff stuff
-.ruff_cache/
