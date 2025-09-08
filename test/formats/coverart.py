@@ -3,7 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2019-2021 Philipp Wolfer
-# Copyright (C) 2020-2021 Laurent Monin
+# Copyright (C) 2020-2022 Laurent Monin
+# Copyright (C) 2024 Giorgio Fontanive
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -56,9 +57,9 @@ class DummyUnsupportedCoverArt(CoverArtImage):
         self.width = 100
         self.height = 100
         self.extension = '.cvr'
-        self.set_data(data)
+        self.set_tags_data(data)
 
-    def set_data(self, data):
+    def set_tags_data(self, data):
         self._data = data
         self.datalength = len(data)
 
@@ -69,17 +70,17 @@ class DummyUnsupportedCoverArt(CoverArtImage):
 
 # prevent unittest to run tests in those classes
 class CommonCoverArtTests:
-
     class CoverArtTestCase(CommonTests.BaseFileTestCase):
-
         supports_types = True
 
         def setUp(self):
             super().setUp()
-            self.set_config_values({
-                'clear_existing_tags': False,
-                'preserve_images': False,
-            })
+            self.set_config_values(
+                {
+                    'clear_existing_tags': False,
+                    'preserve_images': False,
+                }
+            )
             self.jpegdata = load_coverart_file('mb.jpg')
             self.pngdata = load_coverart_file('mb.png')
 
@@ -188,7 +189,7 @@ class CommonCoverArtTests:
                     file='e',
                     tag='e',
                     data=imgdata + b'e',
-                    is_front=False
+                    is_front=False,
                 )
             )
             metadata.images.append(
@@ -196,7 +197,7 @@ class CommonCoverArtTests:
                     file='f',
                     tag='f',
                     data=imgdata + b'f',
-                    types=['front']
+                    types=['front'],
                 )
             )
             metadata.images.append(
@@ -205,7 +206,7 @@ class CommonCoverArtTests:
                     tag='g',
                     data=imgdata + b'g',
                     types=['back'],
-                    is_front=True
+                    is_front=True,
                 )
             )
             return metadata

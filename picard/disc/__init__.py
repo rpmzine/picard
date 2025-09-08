@@ -10,7 +10,7 @@
 # Copyright (C) 2013 Johannes Dewender
 # Copyright (C) 2013 Sebastian Ramacher
 # Copyright (C) 2013 Wieland Hoffmann
-# Copyright (C) 2013, 2018-2021 Laurent Monin
+# Copyright (C) 2013, 2018-2021, 2023-2024 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2018 Vishal Choudhary
 #
@@ -31,7 +31,7 @@
 
 import traceback
 
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 
 from picard import log
 from picard.util.mbserver import build_submission_url
@@ -50,10 +50,9 @@ except ImportError:
         discid = None
 
 
-class Disc(QtCore.QObject):
-
+class Disc:
     def __init__(self, id=None):
-        super().__init__()
+        self.tagger = QtCore.QCoreApplication.instance()
         self.id = id
         self.mcn = None
         self.tracks = 0
@@ -81,7 +80,7 @@ class Disc(QtCore.QObject):
             raise
         except ValueError as e:
             log.error("Error while processing TOC %r: %s", toc, e)
-            raise discid.TOCError(e)
+            raise discid.TOCError(e) from e
 
     def _set_disc_details(self, disc):
         self.id = disc.id
@@ -90,14 +89,21 @@ class Disc(QtCore.QObject):
         self.toc_string = disc.toc_string
         log.debug("Read disc ID %s with MCN %s", self.id, self.mcn)
 
+    @staticmethod
+    def _submission_url(id, tracks, toc_string):
+        return build_submission_url(
+            "/cdtoc/attach",
+            query_args={
+                'id': id,
+                'tracks': tracks,
+                'toc': toc_string.replace(' ', '+'),
+            },
+        )
+
     @property
     def submission_url(self):
         if self.id and self.tracks and self.toc_string:
-            return build_submission_url("/cdtoc/attach", query_args={
-                'id': self.id,
-                'tracks': self.tracks,
-                'toc': self.toc_string.replace(' ', '+'),
-            })
+            return self._submission_url(self.id, self.tracks, self.toc_string)
         else:
             return None
 
@@ -116,11 +122,10 @@ class Disc(QtCore.QObject):
                 log.error(traceback.format_exc())
 
         dialog = CDLookupDialog(releases, self, parent=self.tagger.window)
-        dialog.exec_()
+        dialog.exec()
 
 
 if discid is not None:
-    discid_version = "discid %s, %s" % (discid.__version__,
-                                        discid.LIBDISCID_VERSION_STRING)
+    discid_version = "discid %s, %s" % (discid.__version__, discid.LIBDISCID_VERSION_STRING)
 else:
     discid_version = None

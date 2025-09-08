@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2018 Bob Swift
 # Copyright (C) 2018, 2020, 2022-2023 Philipp Wolfer
-# Copyright (C) 2018, 2020-2022 Laurent Monin
+# Copyright (C) 2018, 2020-2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,8 +23,7 @@
 
 from functools import partial
 
-from PyQt5 import QtCore
-from PyQt5.QtWidgets import QMessageBox
+from PyQt6.QtWidgets import QMessageBox
 
 from picard import (
     PICARD_FANCY_VERSION_STR,
@@ -35,6 +34,11 @@ from picard.const import (
     PLUGINS_API,
     PROGRAM_UPDATE_LEVELS,
 )
+from picard.i18n import (
+    N_,
+    gettext as _,
+    gettext_constants,
+)
 from picard.util import webbrowser2
 from picard.version import (
     Version,
@@ -42,11 +46,9 @@ from picard.version import (
 )
 
 
-class UpdateCheckManager(QtCore.QObject):
-
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
-        self._parent = parent
+class UpdateCheckManager:
+    def __init__(self, tagger):
+        self.tagger = tagger
         self._available_versions = {}
         self._show_always = False
         self._update_level = 0
@@ -92,21 +94,27 @@ class UpdateCheckManager(QtCore.QObject):
             url=PLUGINS_API['urls']['releases'],
             handler=partial(self._releases_json_loaded, callback=callback),
             priority=True,
-            important=True
+            important=True,
         )
 
     def _releases_json_loaded(self, response, reply, error, callback=None):
         """Processes response from specified website api query."""
         if error:
-            log.error(_("Error loading Picard releases list: {error_message}").format(error_message=reply.errorString(),))
+            log.error(
+                _("Error loading Picard releases list: {error_message}").format(
+                    error_message=reply.errorString(),
+                )
+            )
             if self._show_always:
                 QMessageBox.information(
-                    self._parent,
+                    self.tagger.window,
                     _("Picard Update"),
                     _("Unable to retrieve the latest version information from the website.\n({url})").format(
                         url=PLUGINS_API['urls']['releases'],
                     ),
-                    QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.Ok)
+                    QMessageBox.StandardButton.Ok,
+                    QMessageBox.StandardButton.Ok,
+                )
         else:
             if response and 'versions' in response:
                 self._available_versions = response['versions']
@@ -134,19 +142,24 @@ class UpdateCheckManager(QtCore.QObject):
                 key = PROGRAM_UPDATE_LEVELS[test_key]['name']
                 high_version = test_version
         if key:
-            if QMessageBox.information(
-                self._parent,
-                _("Picard Update"),
-                _("A new version of Picard is available.\n\n"
-                  "This version: {picard_old_version}\n"
-                  "New version: {picard_new_version}\n\n"
-                  "Would you like to download the new version?").format(
-                      picard_old_version=PICARD_FANCY_VERSION_STR,
-                      picard_new_version=self._available_versions[key]['tag']
-                ),
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Cancel
-            ) == QMessageBox.StandardButton.Ok:
+            if (
+                QMessageBox.information(
+                    self.tagger.window,
+                    _("Picard Update"),
+                    _(
+                        "A new version of Picard is available.\n\n"
+                        "This version: {picard_old_version}\n"
+                        "New version: {picard_new_version}\n\n"
+                        "Would you like to download the new version?"
+                    ).format(
+                        picard_old_version=PICARD_FANCY_VERSION_STR,
+                        picard_new_version=self._available_versions[key]['tag'],
+                    ),
+                    QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Cancel,
+                )
+                == QMessageBox.StandardButton.Ok
+            ):
                 webbrowser2.open(self._available_versions[key]['urls']['download'])
         else:
             if self._show_always:
@@ -155,12 +168,15 @@ class UpdateCheckManager(QtCore.QObject):
                 else:
                     update_level = N_("unknown")
                 QMessageBox.information(
-                    self._parent,
+                    self.tagger.window,
                     _("Picard Update"),
-                    _("There is no update currently available for your subscribed update level: {update_level}\n\n"
-                      "Your version: {picard_old_version}\n").format(
+                    _(
+                        "There is no update currently available for your subscribed update level: {update_level}\n\n"
+                        "Your version: {picard_old_version}\n"
+                    ).format(
                         update_level=gettext_constants(update_level),
                         picard_old_version=PICARD_FANCY_VERSION_STR,
                     ),
-                    QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.Ok
+                    QMessageBox.StandardButton.Ok,
+                    QMessageBox.StandardButton.Ok,
                 )

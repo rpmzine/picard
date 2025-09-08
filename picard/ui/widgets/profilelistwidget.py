@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2021 Bob Swift
-# Copyright (C) 2022 Laurent Monin
-# Copyright (C) 2022 Philipp Wolfer
+# Copyright (C) 2022-2023 Philipp Wolfer
+# Copyright (C) 2022-2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -24,31 +24,34 @@
 from functools import partial
 import uuid
 
-from PyQt5 import (
+from PyQt6 import (
     QtCore,
     QtGui,
     QtWidgets,
 )
 
-from picard.const import DEFAULT_PROFILE_NAME
+from picard.const.defaults import DEFAULT_PROFILE_NAME
+from picard.i18n import (
+    gettext as _,
+    gettext_constants,
+)
 from picard.util import unique_numbered_title
 
 from picard.ui import HashableListWidgetItem
 
 
 class ProfileListWidget(QtWidgets.QListWidget):
-
     def contextMenuEvent(self, event):
         item = self.itemAt(event.x(), event.y())
         if item:
             menu = QtWidgets.QMenu(self)
-            rename_action = QtWidgets.QAction(_("Rename profile"), self)
+            rename_action = QtGui.QAction(_("Rename profile"), self)
             rename_action.triggered.connect(partial(self.editItem, item))
             menu.addAction(rename_action)
-            remove_action = QtWidgets.QAction(_("Remove profile"), self)
+            remove_action = QtGui.QAction(_("Remove profile"), self)
             remove_action.triggered.connect(partial(self.remove_profile, item))
             menu.addAction(remove_action)
-            menu.exec_(event.globalPos())
+            menu.exec(event.globalPos())
 
     def keyPressEvent(self, event):
         if event.matches(QtGui.QKeySequence.StandardKey.Delete):
@@ -70,8 +73,10 @@ class ProfileListWidget(QtWidgets.QListWidget):
         list_item = ProfileListWidgetItem(name=name, profile_id=profile_id)
         list_item.setCheckState(QtCore.Qt.CheckState.Checked)
         self.insertItem(0, list_item)
-        self.setCurrentItem(list_item, QtCore.QItemSelectionModel.SelectionFlag.Clear
-            | QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent)
+        self.setCurrentItem(
+            list_item,
+            QtCore.QItemSelectionModel.SelectionFlag.Clear | QtCore.QItemSelectionModel.SelectionFlag.SelectCurrent,
+        )
 
     def remove_selected_profile(self):
         items = self.selectedItems()
@@ -81,8 +86,13 @@ class ProfileListWidget(QtWidgets.QListWidget):
     def remove_profile(self, item):
         row = self.row(item)
         msg = _("Are you sure you want to remove this profile?")
-        reply = QtWidgets.QMessageBox.question(self, _('Confirm Remove'), msg,
-            QtWidgets.QMessageBox.StandardButton.Yes, QtWidgets.QMessageBox.StandardButton.No)
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            _('Confirm Remove'),
+            msg,
+            QtWidgets.QMessageBox.StandardButton.Yes,
+            QtWidgets.QMessageBox.StandardButton.No,
+        )
         if item and reply == QtWidgets.QMessageBox.StandardButton.Yes:
             item = self.takeItem(row)
             del item

@@ -3,11 +3,11 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2014 Lukáš Lalinský
-# Copyright (C) 2008, 2013, 2018-2023 Philipp Wolfer
+# Copyright (C) 2008, 2013, 2018-2024 Philipp Wolfer
 # Copyright (C) 2011 Pavan Chander
 # Copyright (C) 2011, 2013 Wieland Hoffmann
 # Copyright (C) 2013 Michael Wiencek
-# Copyright (C) 2013-2015, 2018, 2020-2022 Laurent Monin
+# Copyright (C) 2013-2015, 2018, 2020-2024 Laurent Monin
 # Copyright (C) 2014 Ismael Olea
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2021 Bob Swift
@@ -27,23 +27,23 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 
 from picard.const import PICARD_URLS
 from picard.formats import supported_extensions
+from picard.i18n import gettext as _
 from picard.util import versions
 
 from picard.ui import (
     PicardDialog,
     SingletonDialog,
 )
-from picard.ui.ui_aboutdialog import Ui_AboutDialog
+from picard.ui.forms.ui_aboutdialog import Ui_AboutDialog
 
 
 class AboutDialog(PicardDialog, SingletonDialog):
-
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.ui = Ui_AboutDialog()
         self.ui.setupUi(self)
@@ -52,29 +52,35 @@ class AboutDialog(PicardDialog, SingletonDialog):
     def _update_content(self):
         args = versions.as_dict(i18n=True)
 
-        args['third_parties_versions'] = ', '.join([
-            ("%s %s" % (versions.version_name(name), value))
-            .replace(' ', '&nbsp;')
-            .replace('-', '&#8209;')  # non-breaking hyphen
-            for name, value
-            in versions.as_dict(i18n=True).items()
-            if name != 'version'])
+        args['third_parties_versions'] = ', '.join(
+            [
+                ("%s %s" % (versions.version_name(name), value))
+                .replace(' ', '&nbsp;')
+                .replace('-', '&#8209;')  # non-breaking hyphen
+                for name, value in versions.as_dict(i18n=True).items()
+                if name != 'version'
+            ]
+        )
 
         args['formats'] = ", ".join(map(lambda x: x[1:], supported_extensions()))
         args['copyright_years'] = '2004-2024'
-        args['authors_credits'] = ", ".join([
-            'Robert Kaye',
-            'Lukáš Lalinský',
-            'Laurent Monin',
-            'Sambhav Kothari',
-            'Philipp Wolfer',
-        ])
+        args['authors_credits'] = ", ".join(
+            [
+                'Robert Kaye',
+                'Lukáš Lalinský',
+                'Laurent Monin',
+                'Sambhav Kothari',
+                'Philipp Wolfer',
+            ]
+        )
 
         # TR: Replace this with your name to have it appear in the "About" dialog.
         args['translator_credits'] = _('translator-credits')
         if args['translator_credits'] != 'translator-credits':
             # TR: Replace LANG with language you are translating to.
-            args['translator_credits'] = _("<br/>Translated to LANG by %s") % args['translator_credits'].replace("\n", "<br/>")
+            args['translator_credits'] = _("<br/>Translated to LANG by %s") % args['translator_credits'].replace(
+                "\n", "<br/>"
+            )
         else:
             args['translator_credits'] = ""
         args['icons_credits'] = _(
@@ -84,7 +90,8 @@ class AboutDialog(PicardDialog, SingletonDialog):
             '<a href="http://www.flaticon.com/authors/nikita-golubev">Nikita Golubev</a>, '
             '<a href="http://www.flaticon.com/authors/maxim-basinski">Maxim Basinski</a>, '
             '<a href="https://www.flaticon.com/authors/smashicons">Smashicons</a> '
-            'from <a href="https://www.flaticon.com">www.flaticon.com</a>')
+            'from <a href="https://www.flaticon.com">www.flaticon.com</a>'
+        )
 
         def strong(s):
             return '<strong>' + s + '</strong>'
@@ -103,15 +110,17 @@ class AboutDialog(PicardDialog, SingletonDialog):
             strong(_("Supported formats")),
             '%(formats)s',
             strong(_("Please donate")),
-            _("Thank you for using Picard. Picard relies on the MusicBrainz database, which is operated by the "
-              "MetaBrainz Foundation with the help of thousands of volunteers. If you like this application please "
-              "consider donating to the MetaBrainz Foundation to keep the service running."),
+            _(
+                "Thank you for using Picard. Picard relies on the MusicBrainz database, which is operated by the "
+                "MetaBrainz Foundation with the help of thousands of volunteers. If you like this application please "
+                "consider donating to the MetaBrainz Foundation to keep the service running."
+            ),
             url(PICARD_URLS['donate'], _("Donate now!")),
             strong(_("Credits")),
             small(_("Copyright © %(copyright_years)s %(authors_credits)s and others") + "%(translator_credits)s"),
             small('%(icons_credits)s'),
             strong(_("Official website")),
-            url(PICARD_URLS['home'])
+            url(PICARD_URLS['home']),
         ]
         self.ui.label.setOpenExternalLinks(True)
         self.ui.label.setText("".join('<p align="center">' + p + "</p>" for p in text_paragraphs) % args)

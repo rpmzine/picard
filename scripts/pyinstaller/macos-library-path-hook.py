@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2019-2020 Philipp Wolfer
-# Copyright (C) 2020 Laurent Monin
+# Copyright (C) 2020, 2023 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -29,4 +29,6 @@ os.chdir(os.path.abspath(os.path.join(sys._MEIPASS, '..', '..')))
 
 # On macOS ensure libraries such as libdiscid.dylib get loaded from app bundle
 os.environ['DYLD_FALLBACK_LIBRARY_PATH'] = '%s:%s' % (
-    os.path.dirname(sys.executable), os.environ.get('DYLD_FALLBACK_LIBRARY_PATH', ''))
+    os.path.dirname(sys.executable),
+    os.environ.get('DYLD_FALLBACK_LIBRARY_PATH', ''),
+)

@@ -2,9 +2,10 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2014, 2018, 2020-2021 Laurent Monin
+# Copyright (C) 2014, 2018, 2020-2021, 2023-2024 Laurent Monin
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2020-2021 Philipp Wolfer
+# Copyright (C) 2024 Giorgio Fontanive
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -21,10 +22,24 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
+from dataclasses import dataclass
 from io import BytesIO
 import struct
 
 from picard.util.bitreader import LSBBitReader
+
+
+@dataclass
+class ImageInfo:
+    width: int
+    height: int
+    mime: str
+    extension: str
+    datalen: int
+
+    @property
+    def format(self):
+        return self.extension[1:]
 
 
 class IdentificationError(Exception):
@@ -60,7 +75,13 @@ class IdentifyImageType:
         return self._result()
 
     def _result(self):
-        return (int(self.w), int(self.h), self.mime, self.extension, self.datalen)
+        return ImageInfo(
+            width=int(self.w),
+            height=int(self.h),
+            mime=self.mime,
+            extension=self.extension,
+            datalen=self.datalen,
+        )
 
     def match(self):
         raise NotImplementedError
@@ -79,7 +100,7 @@ class IdentifyJPEG(IdentifyImageType):
 
     def match(self):
         # http://en.wikipedia.org/wiki/JPEG
-        return self.data[:2] == b'\xFF\xD8'  # Start Of Image (SOI) marker
+        return self.data[:2] == b'\xff\xd8'  # Start Of Image (SOI) marker
 
     @classmethod
     def all_extensions(cls):
@@ -94,12 +115,7 @@ class IdentifyJPEG(IdentifyImageType):
             # https://en.wikibooks.org/wiki/JPEG_-_Idea_and_Practice/The_header_part
             # https://www.disktuna.com/list-of-jpeg-markers/
             # https://de.wikipedia.org/wiki/JPEG_File_Interchange_Format
-            SOF_markers = {
-                0xC0, 0xC1, 0xC2, 0xC3,
-                0xC5, 0xC6, 0xC7,
-                0xC9, 0xCA, 0xCB,
-                0xCD, 0xCE, 0xCF
-            }
+            SOF_markers = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF}
             while b and ord(b) != 0xDA:  # Start Of Scan (SOS)
                 while ord(b) != 0xFF:
                     b = jpeg.read(1)
@@ -153,7 +169,7 @@ class IdentifyPNG(IdentifyImageType):
     def match(self):
         # http://en.wikipedia.org/wiki/Portable_Network_Graphics
         # http://www.w3.org/TR/PNG/#11IHDR
-        return self.data[:8] == b'\x89PNG\x0D\x0A\x1A\x0A' and self.data[12:16] == b'IHDR'
+        return self.data[:8] == b'\x89PNG\x0d\x0a\x1a\x0a' and self.data[12:16] == b'IHDR'
 
     def _read(self):
         self.w, self.h = struct.unpack('>LL', self.data[16:24])
@@ -177,10 +193,10 @@ class IdentifyWebP(IdentifyImageType):
             if index != -1:
                 if self.datalen < index + 7:
                     raise NotEnoughData("Not enough data for WebP VP8")
-                self.w, self.h = struct.unpack('<HH', data[index + 3:index + 7])
+                self.w, self.h = struct.unpack('<HH', data[index + 3 : index + 7])
                 # Width and height are encoded as 14 bit integers, ignore the first 2 bits
-                self.w &= 0x3fff
-                self.h &= 0x3fff
+                self.w &= 0x3FFF
+                self.h &= 0x3FFF
             else:
                 self.w, self.h = 0, 0
         # Simple File Format (Lossless)
@@ -232,11 +248,11 @@ class IdentifyTiff(IdentifyImageType):
         else:
             raise UnexpectedError("TIFF: unexpected byte order %r" % byte_order)
         try:
-            offset, = struct.unpack(order + 'I', data[4:8])
-            entry_count, = struct.unpack(order + 'H', data[offset:offset + 2])
+            (offset,) = struct.unpack(order + 'I', data[4:8])
+            (entry_count,) = struct.unpack(order + 'H', data[offset : offset + 2])
             pos = offset + 2
-            for i in range(entry_count):
-                field = data[pos:pos + 12]
+            for _i in range(entry_count):
+                field = data[pos : pos + 12]
                 tag, tiff_type = struct.unpack(order + 'HH', field[:4])
                 if tag == TIFF_TAG_IMAGE_WIDTH:
                     self.w = self._read_value(tiff_type, order, field[8:12])

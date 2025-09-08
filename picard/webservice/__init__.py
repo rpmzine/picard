@@ -6,7 +6,7 @@
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2018-2022, 2024 Philipp Wolfer
-# Copyright (C) 2018-2023 Laurent Monin
+# Copyright (C) 2018-2024 Laurent Monin
 # Copyright (C) 2021 Tche333
 #
 # This program is free software; you can redistribute it and/or
@@ -38,12 +38,13 @@ import os.path
 import platform
 import sys
 
-from PyQt5 import (
+from PyQt6 import (
     QtCore,
     QtNetwork,
 )
-from PyQt5.QtCore import QUrl
-from PyQt5.QtNetwork import (
+from PyQt6.QtCore import QUrl
+from PyQt6.QtNetwork import (
+    QNetworkReply,
     QNetworkRequest,
     QSslError,
 )
@@ -55,13 +56,11 @@ from picard import (
     log,
 )
 from picard.config import get_config
-from picard.const import (
-    CACHE_SIZE_IN_BYTES,
-    appdirs,
-)
+from picard.const import appdirs
+from picard.const.defaults import DEFAULT_CACHE_SIZE_IN_BYTES
+from picard.debug_opts import DebugOpt
 from picard.oauth import OAuthManager
 from picard.util import (
-    build_qurl,
     bytes2human,
     encoded_queryargs,
     parse_json,
@@ -74,11 +73,14 @@ from picard.webservice.utils import port_from_qurl
 COUNT_REQUESTS_DELAY_MS = 250
 
 TEMP_ERRORS_RETRIES = 5
-USER_AGENT_STRING = '%s-%s/%s (%s;%s-%s)' % (PICARD_ORG_NAME, PICARD_APP_NAME,
-                                             PICARD_VERSION_STR,
-                                             platform.platform(),
-                                             platform.python_implementation(),
-                                             platform.python_version())
+USER_AGENT_STRING = '%s-%s/%s (%s;%s-%s)' % (
+    PICARD_ORG_NAME,
+    PICARD_APP_NAME,
+    PICARD_VERSION_STR,
+    platform.platform(),
+    platform.python_implementation(),
+    platform.python_version(),
+)
 CLIENT_STRING = '%s %s-%s' % (PICARD_ORG_NAME, PICARD_APP_NAME, PICARD_VERSION_STR)
 
 
@@ -88,14 +90,16 @@ Parser = namedtuple('Parser', 'mimetype parser')
 
 
 class UnknownResponseParserError(Exception):
-
     def __init__(self, response_type):
-        message = "Unknown parser for response type '%s'. Parser for given response type does not exist." % response_type
+        message = (
+            "Unknown parser for response type '%s'. Parser for given response type does not exist." % response_type
+        )
         super().__init__(message)
 
 
 class WSRequest(QNetworkRequest):
     """Represents a single HTTP request."""
+
     _access_token = None
     _high_prio_no_cache = True
     _mblogin = None
@@ -191,11 +195,16 @@ class WSRequest(QNetworkRequest):
             self._high_prio_no_cache = self.refresh
             self.setAttribute(QNetworkRequest.Attribute.HttpPipeliningAllowedAttribute, True)
 
+        # use HTTP/2 if possible
+        self.setAttribute(QNetworkRequest.Attribute.Http2AllowedAttribute, True)
+
         self.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, USER_AGENT_STRING)
 
         if self.mblogin or self._high_prio_no_cache:
             self.setPriority(QNetworkRequest.Priority.HighPriority)
-            self.setAttribute(QNetworkRequest.Attribute.CacheLoadControlAttribute, QNetworkRequest.CacheLoadControl.AlwaysNetwork)
+            self.setAttribute(
+                QNetworkRequest.Attribute.CacheLoadControlAttribute, QNetworkRequest.CacheLoadControl.AlwaysNetwork
+            )
         elif self.cacheloadcontrol is not None:
             self.setAttribute(QNetworkRequest.Attribute.CacheLoadControlAttribute, self.cacheloadcontrol)
 
@@ -269,7 +278,6 @@ class WSRequest(QNetworkRequest):
 
 
 class RequestTask(namedtuple('RequestTask', 'hostkey func priority')):
-
     @staticmethod
     def from_request(request, func):
         # priority is a boolean
@@ -277,7 +285,6 @@ class RequestTask(namedtuple('RequestTask', 'hostkey func priority')):
 
 
 class RequestPriorityQueue:
-
     def __init__(self, ratecontrol):
         self._queues = defaultdict(lambda: defaultdict(deque))
         self._ratecontrol = ratecontrol
@@ -311,8 +318,7 @@ class RequestPriorityQueue:
             if not prio_queue:
                 del self._queues[prio]
                 continue
-            for hostkey in sorted(prio_queue.keys(),
-                                  key=self._ratecontrol.current_delay):
+            for hostkey in sorted(prio_queue.keys(), key=self._ratecontrol.current_delay):
                 queue = self._queues[prio][hostkey]
                 if not queue:
                     del self._queues[prio][hostkey]
@@ -327,26 +333,25 @@ class RequestPriorityQueue:
 
 
 class WebService(QtCore.QObject):
-
     PARSERS = dict()
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.tagger = QtCore.QCoreApplication.instance()
         self.manager = QtNetwork.QNetworkAccessManager()
-        self._network_accessible_changed(self.manager.networkAccessible())
-        self.manager.networkAccessibleChanged.connect(self._network_accessible_changed)
         self.manager.sslErrors.connect(self.ssl_errors)
         self.oauth_manager = OAuthManager(self)
-        self.set_cache()
-        self.setup_proxy()
         config = get_config()
+        self._init_cache()
+        self.set_cache_size()
+        self.setup_proxy()
         self.set_transfer_timeout(config.setting['network_transfer_timeout_seconds'])
         self.manager.finished.connect(self._process_reply)
         self._request_methods = {
             'GET': self.manager.get,
             'POST': self.manager.post,
             'PUT': self.manager.put,
-            'DELETE': self.manager.deleteResource
+            'DELETE': self.manager.deleteResource,
         }
         self._init_queues()
         self._init_timers()
@@ -376,16 +381,9 @@ class WebService(QtCore.QObject):
 
     @staticmethod
     def display_url(url):
-        return url.toDisplayString(QUrl.UrlFormattingOption.RemoveUserInfo | QUrl.ComponentFormattingOption.EncodeSpaces)
-
-    def _network_accessible_changed(self, accessible):
-        # Qt's network accessibility check sometimes fails, e.g. with VPNs on Windows.
-        # If the accessibility is reported to be not accessible, set it to
-        # unknown instead. Let's just try any request and handle the error.
-        # See https://tickets.metabrainz.org/browse/PICARD-1791
-        if accessible == QtNetwork.QNetworkAccessManager.NetworkAccessibility.NotAccessible:
-            self.manager.setNetworkAccessible(QtNetwork.QNetworkAccessManager.NetworkAccessibility.UnknownAccessibility)
-        log.debug("Network accessible requested: %s, actual: %s", accessible, self.manager.networkAccessible())
+        return url.toDisplayString(
+            QUrl.UrlFormattingOption.RemoveUserInfo | QUrl.ComponentFormattingOption.EncodeSpaces
+        )
 
     def _init_queues(self):
         self._active_requests = {}
@@ -400,17 +398,32 @@ class WebService(QtCore.QObject):
         self._timer_count_pending_requests.setSingleShot(True)
         self._timer_count_pending_requests.timeout.connect(self._count_pending_requests)
 
-    def set_cache(self, cache_size_in_bytes=None):
-        if cache_size_in_bytes is None:
-            cache_size_in_bytes = CACHE_SIZE_IN_BYTES
+    def _init_cache(self, cache_size_in_bytes=None):
         cache = QtNetwork.QNetworkDiskCache()
         cache.setCacheDirectory(os.path.join(appdirs.cache_folder(), 'network'))
-        cache.setMaximumCacheSize(cache_size_in_bytes)
         self.manager.setCache(cache)
-        log.debug("NetworkDiskCache dir: %r current size: %s max size: %s",
-                  cache.cacheDirectory(),
-                  bytes2human.decimal(cache.cacheSize(), l10n=False),
-                  bytes2human.decimal(cache.maximumCacheSize(), l10n=False))
+        log.debug("NetworkDiskCache dir: %r", cache.cacheDirectory())
+
+    def get_valid_cache_size(self):
+        try:
+            config = get_config()
+            cache_size = int(config.setting['network_cache_size_bytes'])
+            if cache_size >= 0:
+                return cache_size
+        except ValueError:
+            pass
+        return DEFAULT_CACHE_SIZE_IN_BYTES
+
+    def set_cache_size(self):
+        cache_size_in_bytes = self.get_valid_cache_size()
+        cache = self.manager.cache()
+        if cache.maximumCacheSize() != cache_size_in_bytes:
+            cache.setMaximumCacheSize(cache_size_in_bytes)
+            log.debug(
+                "NetworkDiskCache size: %s maxsize: %s",
+                bytes2human.decimal(cache.cacheSize(), l10n=False),
+                bytes2human.decimal(cache.maximumCacheSize(), l10n=False),
+            )
 
     def setup_proxy(self):
         proxy = QtNetwork.QNetworkProxy()
@@ -430,11 +443,7 @@ class WebService(QtCore.QObject):
 
     def set_transfer_timeout(self, timeout):
         timeout_ms = timeout * 1000
-        if hasattr(self.manager, 'setTransferTimeout'):  # Available since Qt 5.15
-            self.manager.setTransferTimeout(timeout_ms)
-            self._transfer_timeout = 0
-        else:  # Use fallback implementation
-            self._transfer_timeout = timeout_ms
+        self.manager.setTransferTimeout(timeout_ms)
 
     def _send_request(self, request, access_token=None):
         hostkey = request.get_host_key()
@@ -444,31 +453,7 @@ class WebService(QtCore.QObject):
         send = self._request_methods[request.method]
         data = request.data
         reply = send(request, data.encode('utf-8')) if data is not None else send(request)
-        self._start_transfer_timeout(reply)
         self._active_requests[reply] = request
-
-    def _start_transfer_timeout(self, reply):
-        if not self._transfer_timeout:
-            return
-        # Fallback implementation of a transfer timeout for Qt < 5.15.
-        # Aborts a request if no data gets transferred for TRANSFER_TIMEOUT milliseconds.
-        timer = QtCore.QTimer(self)
-        timer.setSingleShot(True)
-        timer.setTimerType(QtCore.Qt.TimerType.PreciseTimer)
-        timer.timeout.connect(partial(self._timeout_request, reply))
-        reply.finished.connect(timer.stop)
-        reset_callback = partial(self._reset_transfer_timeout, timer)
-        reply.uploadProgress.connect(reset_callback)
-        reply.downloadProgress.connect(reset_callback)
-        timer.start(self._transfer_timeout)
-
-    def _reset_transfer_timeout(self, timer, bytesTransferred, bytesTotal):
-        timer.start(self._transfer_timeout)
-
-    @staticmethod
-    def _timeout_request(reply):
-        if reply.isRunning():
-            reply.abort()
 
     def _start_request(self, request):
         if request.mblogin and request.path != "/oauth2/token":
@@ -479,12 +464,13 @@ class WebService(QtCore.QObject):
     @staticmethod
     def urls_equivalent(leftUrl, rightUrl):
         """
-            Lazy method to determine whether two QUrls are equivalent. At the moment it assumes that if ports are unset
-            that they are port 80 - in absence of a URL normalization function in QUrl or ability to use qHash
-            from QT 4.7
+        Lazy method to determine whether two QUrls are equivalent. At the moment it assumes that if ports are unset
+        that they are port 80 - in absence of a URL normalization function in QUrl or ability to use qHash
+        from QT 4.7
         """
-        return leftUrl.port(80) == rightUrl.port(80) and \
-            leftUrl.toString(QUrl.UrlFormattingOption.RemovePort) == rightUrl.toString(QUrl.UrlFormattingOption.RemovePort)
+        return leftUrl.port(80) == rightUrl.port(80) and leftUrl.toString(
+            QUrl.UrlFormattingOption.RemovePort
+        ) == rightUrl.toString(QUrl.UrlFormattingOption.RemovePort)
 
     def _handle_redirect(self, reply, request, redirect):
         error = int(reply.error())
@@ -526,22 +512,31 @@ class WebService(QtCore.QObject):
 
         slow_down = False
 
-        error = int(reply.error())
+        error = reply.error()
         handler = request.handler
         response_code = self.http_response_code(reply)
         display_reply_url = self.display_url(reply.request().url())
-        if error:
+        if reply.attribute(QNetworkRequest.Attribute.Http2WasUsedAttribute):
+            proto = 'HTTP2'
+        else:
+            proto = 'HTTP'
+        if error != QNetworkReply.NetworkError.NoError:
             errstr = reply.errorString()
-            log.error("Network request error for %s -> %s (QT code %d, HTTP code %d)",
-                      display_reply_url, errstr, error, response_code)
-            if (not request.max_retries_reached()
-                and (response_code == 503
-                     or response_code == 429
-                     # Sometimes QT returns a http status code of 200 even when there
-                     # is a service unavailable error. But it returns a QT error code
-                     # of 403 when this happens
-                     or error == 403
-                     )):
+            log.error(
+                "Network request error for %s -> %s (QT code %r, %s code %d)",
+                display_reply_url,
+                errstr,
+                error,
+                proto,
+                response_code,
+            )
+            if not request.max_retries_reached() and (
+                response_code == 503
+                or response_code == 429
+                # Sometimes QT returns a http status code of 200 even when there
+                # is a service unavailable error.
+                or error == QNetworkReply.NetworkError.ServiceUnavailableError
+            ):
                 slow_down = True
                 retries = request.mark_for_retry()
                 log.debug("Retrying %s (#%d)", display_reply_url, retries)
@@ -550,18 +545,21 @@ class WebService(QtCore.QObject):
             elif handler is not None:
                 handler(reply.readAll(), reply, error)
 
-            slow_down = (slow_down or response_code >= 500)
+            slow_down = slow_down or response_code >= 500
 
         else:
+            error = None
             redirect = reply.attribute(QNetworkRequest.Attribute.RedirectionTargetAttribute)
             from_cache = reply.attribute(QNetworkRequest.Attribute.SourceIsFromCacheAttribute)
             cached = ' (CACHED)' if from_cache else ''
-            log.debug("Received reply for %s -> HTTP %d (%s) %s",
-                      display_reply_url,
-                      response_code,
-                      self.http_response_phrase(reply),
-                      cached
-                      )
+            log.debug(
+                "Received reply for %s -> %s %d (%s) %s",
+                display_reply_url,
+                proto,
+                response_code,
+                self.http_response_phrase(reply),
+                cached,
+            )
             if handler is not None:
                 # Redirect if found and not infinite
                 if redirect:
@@ -569,7 +567,8 @@ class WebService(QtCore.QObject):
                 elif request.response_parser:
                     try:
                         document = request.response_parser(reply)
-                        log.debug("Response received: %s", document)
+                        if DebugOpt.WS_REPLIES.enabled:
+                            log.debug("Response received: %s", document)
                     except Exception as e:
                         log.error("Unable to parse the response for %s -> %s", display_reply_url, e)
                         document = bytes(reply.readAll())
@@ -595,83 +594,6 @@ class WebService(QtCore.QObject):
             reply.close()
             reply.deleteLater()
 
-    def get(self, host, port, path, handler, parse_response_type=DEFAULT_RESPONSE_PARSER_TYPE,
-            priority=False, important=False, mblogin=False, cacheloadcontrol=None, refresh=False,
-            queryargs=None):
-        log.warning("This method is deprecated, use WebService.get_url() instead")
-        request = WSRequest(
-            method='GET',
-            url=build_qurl(host, port, path=path, queryargs=queryargs),
-            handler=handler,
-            parse_response_type=parse_response_type,
-            priority=priority,
-            important=important,
-            mblogin=mblogin,
-            cacheloadcontrol=cacheloadcontrol,
-            refresh=refresh,
-        )
-        return self.add_request(request)
-
-    def post(self, host, port, path, data, handler, parse_response_type=DEFAULT_RESPONSE_PARSER_TYPE,
-             priority=False, important=False, mblogin=True, queryargs=None, request_mimetype=None):
-        log.warning("This method is deprecated, use WebService.post_url() instead")
-        request = WSRequest(
-            method='POST',
-            url=build_qurl(host, port, path=path, queryargs=queryargs),
-            handler=handler,
-            parse_response_type=parse_response_type,
-            priority=priority,
-            important=important,
-            mblogin=mblogin,
-            data=data,
-            request_mimetype=request_mimetype,
-        )
-        log.debug("POST-DATA %r", data)
-        return self.add_request(request)
-
-    def put(self, host, port, path, data, handler, priority=True, important=False, mblogin=True,
-            queryargs=None, request_mimetype=None):
-        log.warning("This method is deprecated, use WebService.put_url() instead")
-        request = WSRequest(
-            method='PUT',
-            url=build_qurl(host, port, path=path, queryargs=queryargs),
-            handler=handler,
-            priority=priority,
-            important=important,
-            mblogin=mblogin,
-            data=data,
-            request_mimetype=request_mimetype,
-        )
-        return self.add_request(request)
-
-    def delete(self, host, port, path, handler, priority=True, important=False, mblogin=True,
-               queryargs=None):
-        log.warning("This method is deprecated, use WebService.delete_url() instead")
-        request = WSRequest(
-            method='DELETE',
-            url=build_qurl(host, port, path=path, queryargs=queryargs),
-            handler=handler,
-            priority=priority,
-            important=important,
-            mblogin=mblogin,
-        )
-        return self.add_request(request)
-
-    def download(self, host, port, path, handler, priority=False,
-                 important=False, cacheloadcontrol=None, refresh=False,
-                 queryargs=None):
-        log.warning("This method is deprecated, use WebService.download_url() instead")
-        request = WSRequest(
-            method='GET',
-            url=build_qurl(host, port, path=path, queryargs=queryargs),
-            handler=handler,
-            priority=priority,
-            important=important,
-            cacheloadcontrol=cacheloadcontrol,
-            refresh=refresh,
-        )
-        return self.add_request(request)
-
     def get_url(self, **kwargs):
         kwargs['method'] = 'GET'
         kwargs['parse_response_type'] = kwargs.get('parse_response_type', DEFAULT_RESPONSE_PARSER_TYPE)
@@ -681,7 +603,8 @@ class WebService(QtCore.QObject):
         kwargs['method'] = 'POST'
         kwargs['parse_response_type'] = kwargs.get('parse_response_type', DEFAULT_RESPONSE_PARSER_TYPE)
         kwargs['mblogin'] = kwargs.get('mblogin', True)
-        log.debug("POST-DATA %r", kwargs['data'])
+        if DebugOpt.WS_POST.enabled:
+            log.debug("POST-DATA %r", kwargs['data'])
         return self.add_request(WSRequest(**kwargs))
 
     def put_url(self, **kwargs):

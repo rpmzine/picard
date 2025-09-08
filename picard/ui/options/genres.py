@@ -3,9 +3,9 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2008 Lukáš Lalinský
-# Copyright (C) 2018, 2020-2023 Philipp Wolfer
+# Copyright (C) 2018, 2020-2023, 2025 Philipp Wolfer
 # Copyright (C) 2019 Wieland Hoffmann
-# Copyright (C) 2019-2022 Laurent Monin
+# Copyright (C) 2019-2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -22,25 +22,22 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import (
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import (
     QTextBlockFormat,
     QTextCursor,
 )
 
-from picard.config import (
-    BoolOption,
-    IntOption,
-    TextOption,
-    get_config,
+from picard.config import get_config
+from picard.extension_points.options_pages import register_options_page
+from picard.i18n import (
+    N_,
+    gettext as _,
 )
 from picard.track import TagGenreFilter
 
-from picard.ui.options import (
-    OptionsPage,
-    register_options_page,
-)
-from picard.ui.ui_options_genres import Ui_GenresOptionsPage
+from picard.ui.forms.ui_options_genres import Ui_GenresOptionsPage
+from picard.ui.options import OptionsPage
 
 
 TOOLTIP_GENRES_FILTER = N_("""<html><head/><body>
@@ -82,7 +79,6 @@ Green background means the tag will be kept.
 
 
 class GenresOptionsPage(OptionsPage):
-
     NAME = 'genres'
     TITLE = N_("Genres")
     PARENT = 'metadata'
@@ -90,19 +86,19 @@ class GenresOptionsPage(OptionsPage):
     ACTIVE = True
     HELP_URL = "/config/options_genres.html"
 
-    options = [
-        BoolOption('setting', 'use_genres', False),
-        IntOption('setting', 'max_genres', 5),
-        IntOption('setting', 'min_genre_usage', 90),
-        TextOption('setting', 'genres_filter', '-seen live\n-favorites\n-fixme\n-owned'),
-        TextOption('setting', 'join_genres', ''),
-        BoolOption('setting', 'only_my_genres', False),
-        BoolOption('setting', 'artists_genres', False),
-        BoolOption('setting', 'folksonomy_tags', False),
-    ]
+    OPTIONS = (
+        ('use_genres', None),
+        ('only_my_genres', ['only_my_genres']),
+        ('artists_genres', ['artists_genres']),
+        ('folksonomy_tags', ['folksonomy_tags']),
+        ('min_genre_usage', ['min_genre_usage']),
+        ('max_genres', ['max_genres']),
+        ('join_genres', ['join_genres']),
+        ('genres_filter', ['genres_filter']),
+    )
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.ui = Ui_GenresOptionsPage()
         self.ui.setupUi(self)
 
@@ -151,9 +147,7 @@ class GenresOptionsPage(OptionsPage):
         tagfilter = TagGenreFilter(filters)
 
         # FIXME: very simple error reporting, improve
-        self.ui.label_test_genres_filter_error.setText(
-            "\n".join(tagfilter.format_errors())
-        )
+        self.ui.label_test_genres_filter_error.setText("\n".join(tagfilter.format_errors()))
 
         def set_line_fmt(lineno, textformat):
             obj = self.ui.test_genres_filter

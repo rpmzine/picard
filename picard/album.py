@@ -7,14 +7,14 @@
 # Copyright (C) 2008 Gary van der Merwe
 # Copyright (C) 2008 Hendrik van Antwerpen
 # Copyright (C) 2008 ojnkpjg
-# Copyright (C) 2008-2011, 2014, 2018-2023 Philipp Wolfer
+# Copyright (C) 2008-2011, 2014, 2018-2024 Philipp Wolfer
 # Copyright (C) 2009 Nikolai Prokoschenko
 # Copyright (C) 2011-2012 Chad Wilson
 # Copyright (C) 2011-2013, 2019 Michael Wiencek
 # Copyright (C) 2012-2013, 2016-2017 Wieland Hoffmann
 # Copyright (C) 2013, 2018 Calvin Walton
 # Copyright (C) 2013-2015, 2017 Sophist-UK
-# Copyright (C) 2013-2015, 2017-2022 Laurent Monin
+# Copyright (C) 2013-2015, 2017-2024 Laurent Monin
 # Copyright (C) 2016 Suhas
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2017 Antonio Larrosa
@@ -23,6 +23,8 @@
 # Copyright (C) 2020-2021 Gabriel Ferreira
 # Copyright (C) 2021 Petit Minion
 # Copyright (C) 2022 skelly37
+# Copyright (C) 2024 Giorgio Fontanive
+# Copyright (C) 2024 Rakim Middya
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -47,18 +49,19 @@ from collections import (
 from enum import IntEnum
 import traceback
 
-from PyQt5 import (
-    QtCore,
-    QtNetwork,
-)
+from PyQt6 import QtNetwork
 
 from picard import log
 from picard.cluster import Cluster
 from picard.collection import add_release_to_user_collections
 from picard.config import get_config
 from picard.const import VARIOUS_ARTISTS_ID
-from picard.dataobj import DataObject
 from picard.file import File
+from picard.i18n import (
+    N_,
+    gettext as _,
+)
+from picard.item import MetadataItem
 from picard.mbjson import (
     medium_to_metadata,
     release_group_to_metadata,
@@ -70,14 +73,11 @@ from picard.metadata import (
     run_album_metadata_processors,
     run_track_metadata_processors,
 )
-from picard.plugin import (
-    PluginFunctions,
-    PluginPriority,
-)
+from picard.plugin import PluginFunctions
 from picard.script import (
     ScriptError,
     ScriptParser,
-    enabled_tagger_scripts_texts,
+    iter_active_tagging_scripts,
 )
 from picard.track import Track
 from picard.util import (
@@ -85,14 +85,7 @@ from picard.util import (
     format_time,
     mbid_validate,
 )
-from picard.util.imagelist import (
-    add_metadata_images,
-    remove_metadata_images,
-    update_metadata_images,
-)
 from picard.util.textencoding import asciipunct
-
-from picard.ui.item import Item
 
 
 RECORDING_QUERY_LIMIT = 100
@@ -109,7 +102,7 @@ def _copy_artist_nodes(source, target_node):
             credit['artist'] = artist_node
 
 
-class AlbumArtist(DataObject):
+class AlbumArtist(MetadataItem):
     def __init__(self, album_artist_id):
         super().__init__(album_artist_id)
 
@@ -127,14 +120,62 @@ class ParseResult(IntEnum):
     MISSING_TRACK_RELS = 2
 
 
-class Album(DataObject, Item):
+class TracksCache:
+    """Cache for track lookups by recording/track ID and track/disc numbers."""
 
-    metadata_images_changed = QtCore.pyqtSignal()
+    def __init__(self):
+        """Initialize an empty cache"""
+        self._cache = defaultdict(lambda: None)
+        self._initialized = False
 
+    def build(self, tracks):
+        """Populate the cache with tracks, creating lookup keys from their metadata.
+
+        For each track, creates cache entries with combinations of:
+        - recording ID
+        - track ID
+        - track number
+        - disc number
+
+        Args:
+            tracks: List of Track objects to add to the cache
+        """
+        for track in tracks:
+            tm_recordingid = track.orig_metadata['musicbrainz_recordingid']
+            tm_trackid = track.orig_metadata['musicbrainz_trackid']
+            tm_tracknumber = track.orig_metadata['tracknumber']
+            tm_discnumber = track.orig_metadata['discnumber']
+            for tup in (
+                (tm_recordingid, tm_tracknumber, tm_discnumber),
+                (tm_recordingid, tm_tracknumber),
+                (tm_recordingid,),
+                (tm_trackid, tm_tracknumber, tm_discnumber),
+                (tm_trackid, tm_tracknumber),
+                (tm_trackid,),
+            ):
+                self._cache[tup] = track
+        self._initialized = True
+
+    def get_track(self, mbid, tracknumber=None, discnumber=None):
+        """Get track from cache by ID and optional track/disc numbers."""
+        if tracknumber and discnumber:
+            track = self._cache[(mbid, tracknumber, discnumber)]
+            if track:
+                return track
+        if tracknumber:
+            track = self._cache[(mbid, tracknumber)]
+            if track:
+                return track
+        return self._cache[(mbid,)]
+
+    def __bool__(self):
+        """Returns True if cache was initialized"""
+        return self._initialized
+
+
+class Album(MetadataItem):
     def __init__(self, album_id, discid=None):
-        DataObject.__init__(self, album_id)
-        self.metadata = Metadata()
-        self.orig_metadata = Metadata()
+        super().__init__(album_id)
         self.tracks = []
         self.loaded = False
         self.load_task = None
@@ -151,7 +192,7 @@ class Album(DataObject, Item):
         self.unmatched_files.metadata_images_changed.connect(self.update_metadata_images)
         self.status = AlbumStatus.NONE
         self._album_artists = []
-        self.update_metadata_images_enabled = True
+        self.update_children_metadata_attrs = {'metadata', 'orig_metadata'}
 
     def __repr__(self):
         return '<Album %s %r>' % (self.id, self.metadata['album'])
@@ -164,9 +205,6 @@ class Album(DataObject, Item):
 
     def iter_correctly_matched_tracks(self):
         yield from (track for track in self.tracks if track.num_linked_files == 1)
-
-    def enable_update_metadata_images(self, enabled):
-        self.update_metadata_images_enabled = enabled
 
     def append_album_artist(self, album_artist_id):
         """Append artist id to the list of album artists
@@ -207,24 +245,48 @@ class Album(DataObject, Item):
             self.error_append(traceback.format_exc())
 
     def _parse_release(self, release_node):
+        """Parse release node from MusicBrainz API data"""
         log.debug("Loading release %r …", self.id)
         self._tracks_loaded = False
-        release_id = release_node['id']
-        if release_id != self.id:
-            self.tagger.mbid_redirects[self.id] = release_id
-            album = self.tagger.albums.get(release_id)
-            if album:
-                log.debug("Release %r already loaded", release_id)
-                album.match_files(self.unmatched_files.files)
-                album.update()
-                self.tagger.remove_album(self)
-                return ParseResult.REDIRECT
-            else:
-                del self.tagger.albums[self.id]
-                self.tagger.albums[release_id] = self
-                self.id = release_id
+
+        if self._hande_release_redirect(release_node):
+            return ParseResult.REDIRECT
 
         self._release_node = release_node
+        self._setup_release_artist_nodes(release_node)
+        self._setup_release_group(release_node)
+        self._setup_release_metadata(release_node)
+
+        # Add album to collections
+        add_release_to_user_collections(release_node)
+
+        if self._needs_track_relationships(release_node):
+            return ParseResult.MISSING_TRACK_RELS
+
+        return ParseResult.PARSED
+
+    def _hande_release_redirect(self, release_node):
+        """Handle release redirect"""
+        release_id = release_node['id']
+        if release_id == self.id:
+            return False
+
+        self.tagger.mbid_redirects[self.id] = release_id
+        album = self.tagger.albums.get(release_id)
+        if album:
+            log.debug("Release %r already loaded", release_id)
+            album.match_files(self.unmatched_files.files)
+            album.update()
+            self.tagger.remove_album(self)
+            return True
+
+        del self.tagger.albums[self.id]
+        self.tagger.albums[release_id] = self
+        self.id = release_id
+        return False
+
+    def _setup_release_artist_nodes(self, release_node):
+        """Setup release artist nodes for supplementary data"""
         # Make the release artist nodes available, since they may
         # contain supplementary data (aliases, tags, genres, ratings)
         # which aren't present in the release group, track, or
@@ -233,48 +295,50 @@ class Album(DataObject, Item):
         # available for use in mbjson.py and external plugins.
         self._release_artist_nodes = _create_artist_node_dict(release_node)
 
-        # Get release metadata
-        m = self._new_metadata
-        m.length = 0
-
+    def _setup_release_group(self, release_node):
+        """Process and setup release group data"""
         rg_node = release_node['release-group']
         rg = self.release_group = self.tagger.get_release_group_by_id(rg_node['id'])
         rg.loaded_albums.add(self.id)
         rg.refcount += 1
-
         _copy_artist_nodes(self._release_artist_nodes, rg_node)
         release_group_to_metadata(rg_node, rg.metadata, rg)
-        m.copy(rg.metadata)
-        release_to_metadata(release_node, m, album=self)
 
+    def _setup_release_metadata(self, release_node):
+        """Process and setup release metadata"""
+        metadata = self._new_metadata
+        metadata.length = 0
+        metadata.copy(self.release_group.metadata)
+        release_to_metadata(release_node, metadata, album=self)
+        self._release_metadata_customization(metadata, release_node)
+
+    def _release_metadata_customization(self, metadata, release_node):
+        """Apply modifications to release metadata"""
         config = get_config()
 
         # Custom VA name
-        if m['musicbrainz_albumartistid'] == VARIOUS_ARTISTS_ID:
-            m['albumartistsort'] = m['albumartist'] = config.setting['va_name']
+        if metadata['musicbrainz_albumartistid'] == VARIOUS_ARTISTS_ID:
+            metadata['albumartistsort'] = metadata['albumartist'] = config.setting['va_name']
 
         # Convert Unicode punctuation
         if config.setting['convert_punctuation']:
-            m.apply_func(asciipunct)
+            metadata.apply_func(asciipunct)
 
-        m['totaldiscs'] = len(release_node['media'])
+        metadata['totaldiscs'] = len(release_node['media'])
 
-        # Add album to collections
-        add_release_to_user_collections(release_node)
+    def _needs_track_relationships(self, release_node):
+        """Check if track relationships needs to be loaded"""
+        config = get_config()
+        if not config.setting['track_ars']:
+            return False
 
-        if config.setting['track_ars']:
-            # Detect if track relationships did not get loaded
-            try:
-                for medium_node in release_node['media']:
-                    if medium_node['track-count']:
-                        if 'relations' in medium_node['tracks'][0]['recording']:
-                            return ParseResult.PARSED
-                        else:
-                            return ParseResult.MISSING_TRACK_RELS
-            except KeyError:
-                pass
-
-        return ParseResult.PARSED
+        try:
+            for medium_node in release_node['media']:
+                if medium_node['track-count']:
+                    return 'relations' not in medium_node['tracks'][0]['recording']
+        except KeyError:
+            pass
+        return False
 
     def _release_request_finished(self, document, http, error):
         if self.load_task is None:
@@ -304,7 +368,10 @@ class Album(DataObject, Item):
                     parse_result = self._parse_release(document)
                     config = get_config()
                     if parse_result == ParseResult.MISSING_TRACK_RELS:
-                        log.debug("Recording relationships not loaded in initial request for %r, issuing separate requests", self)
+                        log.debug(
+                            "Recording relationships not loaded in initial request for %r, issuing separate requests",
+                            self,
+                        )
                         self._request_recording_relationships()
                     elif parse_result == ParseResult.PARSED:
                         self._run_album_metadata_processors()
@@ -476,55 +543,68 @@ class Album(DataObject, Item):
         self._tracks_loaded = True
 
     def _finalize_loading_album(self):
-        self.enable_update_metadata_images(False)
-        for track in self._new_tracks:
-            track.orig_metadata.copy(track.metadata)
-            track.metadata_images_changed.connect(self.update_metadata_images)
-
-        # Prepare parser for user's script
-        for s_name, s_text in enabled_tagger_scripts_texts():
-            parser = ScriptParser()
+        with self.suspend_metadata_images_update:
             for track in self._new_tracks:
-                # Run tagger script for each track
-                try:
-                    parser.eval(s_text, track.metadata)
-                except ScriptError:
-                    log.exception("Failed to run tagger script %s on track", s_name)
-                track.metadata.strip_whitespace()
-                track.scripted_metadata.update(track.metadata)
-            # Run tagger script for the album itself
-            try:
-                parser.eval(s_text, self._new_metadata)
-            except ScriptError:
-                log.exception("Failed to run tagger script %s on album", s_name)
-            self._new_metadata.strip_whitespace()
+                track.orig_metadata.copy(track.metadata)
+                track.metadata_images_changed.connect(self.update_metadata_images)
 
-        unmatched_files = [file for track in self.tracks for file in track.files]
-        self.metadata = self._new_metadata
-        self.orig_metadata.copy(self.metadata)
-        self.orig_metadata.images.clear()
-        self.tracks = self._new_tracks
-        del self._new_metadata
-        del self._new_tracks
-        self.loaded = True
-        self.status = AlbumStatus.LOADED
-        self.match_files(unmatched_files + self.unmatched_files.files)
-        self.enable_update_metadata_images(True)
+            # Prepare parser for user's script
+            for script in iter_active_tagging_scripts():
+                parser = ScriptParser()
+                for track in self._new_tracks:
+                    # Run tagger script for each track
+                    try:
+                        parser.eval(script.content, track.metadata)
+                    except ScriptError:
+                        log.exception("Failed to run tagger script %s on track", script.name)
+                    track.metadata.strip_whitespace()
+                    track.scripted_metadata.update(track.metadata)
+                # Run tagger script for the album itself
+                try:
+                    parser.eval(script.content, self._new_metadata)
+                except ScriptError:
+                    log.exception("Failed to run tagger script %s on album", script.name)
+                self._new_metadata.strip_whitespace()
+
+            unmatched_files = [file for track in self.tracks for file in track.files]
+            self.metadata = self._new_metadata
+            self.orig_metadata.copy(self.metadata)
+            self.orig_metadata.images.clear()
+            self.tracks = self._new_tracks
+            del self._new_metadata
+            del self._new_tracks
+            self.loaded = True
+            self.status = AlbumStatus.LOADED
+            self.match_files(unmatched_files + self.unmatched_files.files)
         self.update_metadata_images()
         self.update()
+
+        # Trigger re-sort after album is fully loaded to ensure accurate match quality sorting
+        # See the module: picard/ui/itemviews/match_quality_column.py
+        # Without this, the sorting calcs never retrigger
+        if self.ui_item:
+            tree_widget = self.ui_item.treeWidget()
+            if tree_widget and tree_widget.isSortingEnabled():
+                # Clear cached sort keys for this item to force recalculation
+                self.ui_item._sortkeys.clear()
+                # Trigger re-sort by calling sortByColumn with current sort column
+                current_sort_column = tree_widget.sortColumn()
+                if current_sort_column >= 0:
+                    tree_widget.sortByColumn(current_sort_column, tree_widget.header().sortIndicatorOrder())
+
         self.tagger.window.set_statusbar_message(
             N_('Album %(id)s loaded: %(artist)s - %(album)s'),
             {
                 'id': self.id,
                 'artist': self.metadata['albumartist'],
-                'album': self.metadata['album']
+                'album': self.metadata['album'],
             },
-            timeout=3000
+            timeout=3000,
         )
-        for func, always in self._after_load_callbacks:
+        for func, _run_on_error in self._after_load_callbacks:
             func()
         self._after_load_callbacks = []
-        if self.item.isSelected():
+        if self.ui_item.isSelected():
             self.tagger.window.refresh_metadatabox()
             self.tagger.window.cover_art_box.update_metadata()
 
@@ -533,6 +613,7 @@ class Album(DataObject, Item):
             # This is not supposed to happen, _finalize_loading should only
             # be called once after all requests finished.
             import inspect
+
             stack = inspect.stack()
             args = [self]
             msg = "Album._finalize_loading called for already loaded album %r"
@@ -551,8 +632,8 @@ class Album(DataObject, Item):
                 del self._new_metadata
                 del self._new_tracks
                 self.loaded = True
-                for func, always in self._after_load_callbacks:
-                    if always:
+                for func, run_on_error in self._after_load_callbacks:
+                    if run_on_error:
                         func()
             return
 
@@ -571,7 +652,7 @@ class Album(DataObject, Item):
             return
         self.tagger.window.set_statusbar_message(
             N_("Loading album %(id)s …"),
-            {'id': self.id}
+            {'id': self.id},
         )
         self.loaded = False
         self.status = AlbumStatus.LOADING
@@ -629,14 +710,14 @@ class Album(DataObject, Item):
             inc=inc,
             mblogin=require_authentication,
             priority=priority,
-            refresh=refresh
+            refresh=refresh,
         )
 
-    def run_when_loaded(self, func, always=False):
+    def run_when_loaded(self, func, run_on_error=False):
         if self.loaded:
             func()
         else:
-            self._after_load_callbacks.append((func, always))
+            self._after_load_callbacks.append((func, run_on_error))
 
     def stop_loading(self):
         if self.load_task:
@@ -644,65 +725,50 @@ class Album(DataObject, Item):
             self.load_task = None
 
     def update(self, update_tracks=True, update_selection=True):
-        if self.item:
-            self.item.update(update_tracks, update_selection=update_selection)
+        if self.ui_item:
+            self.ui_item.update(update_tracks, update_selection=update_selection)
 
     def add_file(self, track, file, new_album=True):
         self._files_count += 1
         if new_album:
             self.update(update_tracks=False)
-            add_metadata_images(self, [file])
+            self.add_metadata_images_from_children([file])
 
     def remove_file(self, track, file, new_album=True):
         self._files_count -= 1
         if new_album:
             self.update(update_tracks=False)
-            remove_metadata_images(self, [file])
+            self.remove_metadata_images_from_children([file])
 
     @staticmethod
     def _match_files(files, tracks, unmatched_files, threshold=0):
         """Match files to tracks on this album, based on metadata similarity or recordingid."""
-        tracks_cache = defaultdict(lambda: None)
-
-        def build_tracks_cache():
-            for track in tracks:
-                tm_recordingid = track.orig_metadata['musicbrainz_recordingid']
-                tm_trackid = track.orig_metadata['musicbrainz_trackid']
-                tm_tracknumber = track.orig_metadata['tracknumber']
-                tm_discnumber = track.orig_metadata['discnumber']
-                for tup in (
-                    (tm_recordingid, tm_tracknumber, tm_discnumber),
-                    (tm_recordingid, tm_tracknumber),
-                    (tm_recordingid, ),
-                    (tm_trackid, tm_tracknumber, tm_discnumber),
-                    (tm_trackid, tm_tracknumber),
-                    (tm_trackid, )):
-                    tracks_cache[tup] = track
-
         SimMatchAlbum = namedtuple('SimMatchAlbum', 'similarity track')
         no_match = SimMatchAlbum(similarity=-1, track=unmatched_files)
+
+        tracks_cache = TracksCache()
 
         for file in list(files):
             if file.state == File.REMOVED:
                 continue
-            # if we have a recordingid or trackid to match against, use that in priority
+
+            # If we have a recordingid or trackid to match against, use that in priority
             # if recordingid and trackid do point to different tracks, compare the file
             # and track durations to find the better match.
-            recid = file.match_recordingid or file.metadata['musicbrainz_recordingid']
-            trackid = file.metadata['musicbrainz_trackid']
-            tracknumber = file.metadata['tracknumber']
-            discnumber = file.metadata['discnumber']
+            metadata = file.metadata
+            recordingid = file.match_recordingid or metadata['musicbrainz_recordingid']
+            trackid = metadata['musicbrainz_trackid']
+            tracknumber = metadata['tracknumber']
+            discnumber = metadata['discnumber']
 
             def mbid_candidates():
-                for mbid in (recid, trackid):
+                if not tracks_cache:
+                    tracks_cache.build(tracks)
+                for mbid in (recordingid, trackid):
                     if mbid and mbid_validate(mbid):
-                        if not tracks_cache:
-                            build_tracks_cache()
-                        track = (tracks_cache[(mbid, tracknumber, discnumber)]
-                                or tracks_cache[(mbid, tracknumber)]
-                                or tracks_cache[(mbid, )])
+                        track = tracks_cache.get_track(mbid, tracknumber, discnumber)
                         if track:
-                            similarity = track.metadata.length_score(track.metadata.length, file.metadata.length)
+                            similarity = track.metadata.length_score(track.metadata.length, metadata.length)
                             yield SimMatchAlbum(similarity=similarity, track=track)
 
             best_match = find_best_match(mbid_candidates(), no_match)
@@ -734,27 +800,35 @@ class Album(DataObject, Item):
                 for file in list(files):
                     file.move(self.unmatched_files)
 
+    @property
     def can_save(self):
         return self._files_count > 0
 
+    @property
     def can_remove(self):
         return True
 
+    @property
     def can_edit_tags(self):
         return True
 
+    @property
     def can_analyze(self):
         return False
 
+    @property
     def can_autotag(self):
         return False
 
+    @property
     def can_refresh(self):
         return True
 
+    @property
     def can_view_info(self):
         return self.loaded or bool(self.errors)
 
+    @property
     def is_album_like(self):
         return True
 
@@ -805,7 +879,7 @@ class Album(DataObject, Item):
                 if ca_detailed:
                     elems.append(ca_detailed)
 
-                return '%s\u200E (%s)' % (title, '; '.join(elems))
+                return '%s\u200e (%s)' % (title, '; '.join(elems))
             else:
                 return title
         elif column == '~length':
@@ -822,6 +896,8 @@ class Album(DataObject, Item):
             return self.metadata['totaldiscs']
         elif column == 'covercount':
             return self.cover_art_description()
+        elif column == 'coverdimensions':
+            return self.cover_art_dimensions()
         else:
             return self.metadata[column]
 
@@ -843,25 +919,28 @@ class Album(DataObject, Item):
             self.load(priority=True, refresh=True)
 
     def update_metadata_images(self):
-        if not self.update_metadata_images_enabled:
+        if self.suspend_metadata_images_update:
             return
 
-        if update_metadata_images(self):
-            self.update(False)
+        if self.update_metadata_images_from_children():
+            self.update(update_tracks=False)
             self.metadata_images_changed.emit()
 
     def keep_original_images(self):
-        self.enable_update_metadata_images(False)
+        with self.suspend_metadata_images_update:
+            for track in self.tracks:
+                track.keep_original_images()
+            for file in list(self.unmatched_files.files):
+                file.keep_original_images()
+
+    def children_metadata_items(self):
         for track in self.tracks:
-            track.keep_original_images()
-        for file in list(self.unmatched_files.files):
-            file.keep_original_images()
-        self.enable_update_metadata_images(True)
-        self.update_metadata_images()
+            yield track
+            yield from track.files
+        yield from self.unmatched_files.files
 
 
 class NatAlbum(Album):
-
     def __init__(self):
         super().__init__('NATS')
         self.loaded = True
@@ -869,43 +948,34 @@ class NatAlbum(Album):
 
     def update(self, update_tracks=True, update_selection=True):
         config = get_config()
-        self.enable_update_metadata_images(False)
         old_album_title = self.metadata['album']
         self.metadata['album'] = config.setting['nat_name']
-        for track in self.tracks:
-            if old_album_title == track.metadata['album']:
-                track.metadata['album'] = self.metadata['album']
-            for file in track.files:
-                track.update_file_metadata(file)
-        self.enable_update_metadata_images(True)
-        super().update(update_tracks, update_selection)
+        with self.suspend_metadata_images_update:
+            for track in self.tracks:
+                if old_album_title == track.metadata['album']:
+                    track.metadata['album'] = self.metadata['album']
+                for file in track.files:
+                    track.update_file_metadata(file)
+        super().update(update_tracks=update_tracks, update_selection=update_selection)
 
     def _finalize_loading(self, error):
         self.update()
 
+    @property
     def can_refresh(self):
         return False
 
+    @property
     def can_browser_lookup(self):
         return False
 
+    @property
     def can_view_info(self):
         return False
 
 
-_album_post_removal_processors = PluginFunctions(label='album_post_removal_processors')
-
-
-def register_album_post_removal_processor(function, priority=PluginPriority.NORMAL):
-    """Registers an album-removed processor.
-    Args:
-        function: function to call after album removal, it will be passed the album object
-        priority: optional, PluginPriority.NORMAL by default
-    Returns:
-        None
-    """
-    _album_post_removal_processors.register(function.__module__, function, priority)
+album_post_removal_processors = PluginFunctions(label='album_post_removal_processors')
 
 
 def run_album_post_removal_processors(album_object):
-    _album_post_removal_processors.run(album_object)
+    album_post_removal_processors.run(album_object)

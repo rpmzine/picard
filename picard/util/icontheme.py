@@ -3,9 +3,9 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2008 Lukáš Lalinský
-# Copyright (C) 2013, 2018-2021 Laurent Monin
+# Copyright (C) 2013, 2018-2021, 2024 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
-# Copyright (C) 2020-2021 Philipp Wolfer
+# Copyright (C) 2020-2022 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -24,7 +24,7 @@
 
 import os.path
 
-from PyQt5 import QtGui
+from PyQt6 import QtGui
 
 from picard.const.sys import IS_WIN
 
@@ -33,21 +33,18 @@ if IS_WIN:
     _search_paths = []
 else:
     _search_paths = [os.path.expanduser('~/.icons')]
-    _search_paths += [
-        os.path.join(path, 'icons') for path in
-        os.environ.get('XDG_DATA_DIRS', '/usr/share').split(':')
-    ]
+    _search_paths += [os.path.join(path, 'icons') for path in os.environ.get('XDG_DATA_DIRS', '/usr/share').split(':')]
     _search_paths.append('/usr/share/pixmaps')
 
 _current_theme = None
 if 'XDG_CURRENT_DESKTOP' in os.environ:
     desktop = os.environ['XDG_CURRENT_DESKTOP'].lower()
     if desktop in {'gnome', 'unity'}:
-        _current_theme = (os.popen('gsettings get org.gnome.desktop.interface icon-theme').read().strip()[1:-1]
-                          or None)
+        _current_theme = os.popen('gsettings get org.gnome.desktop.interface icon-theme').read().strip()[1:-1] or None
 elif os.environ.get('KDE_FULL_SESSION'):
-    _current_theme = (os.popen("kreadconfig --file kdeglobals --group Icons --key Theme --default crystalsvg").read().strip()
-                      or None)
+    _current_theme = (
+        os.popen("kreadconfig --file kdeglobals --group Icons --key Theme --default crystalsvg").read().strip() or None
+    )
 
 
 ICON_SIZE_MENU = ('16x16',)

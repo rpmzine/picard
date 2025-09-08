@@ -4,9 +4,10 @@
 #
 # Copyright (C) 2007 Lukáš Lalinský
 # Copyright (C) 2014 Shadab Zafar
-# Copyright (C) 2015-2021 Laurent Monin
+# Copyright (C) 2015-2021, 2023-2024 Laurent Monin
 # Copyright (C) 2019 Wieland Hoffmann
 # Copyright (C) 2019-2020, 2022-2023 Philipp Wolfer
+# Copyright (C) 2022 skelly37
 # Copyright (C) 2023 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
@@ -35,7 +36,7 @@ import tempfile
 import zipfile
 import zipimport
 
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 
 from picard import log
 from picard.const import (
@@ -43,11 +44,17 @@ from picard.const import (
     USER_PLUGIN_DIR,
 )
 from picard.const.sys import IS_FROZEN
+from picard.extension_points import (
+    PLUGIN_MODULE_PREFIX,
+    unregister_module_extensions,
+)
+from picard.i18n import (
+    N_,
+    gettext as _,
+)
 from picard.plugin import (
-    _PLUGIN_MODULE_PREFIX,
     PluginData,
     PluginWrapper,
-    _unregister_module_extensions,
 )
 import picard.plugins
 from picard.version import (
@@ -136,7 +143,7 @@ def load_zip_manifest(archive_path):
 
 
 def zip_import(path):
-    if (not is_zip(path) or not os.path.isfile(path)):
+    if not is_zip(path) or not os.path.isfile(path):
         return None
     try:
         return zipimport.zipimporter(path)
@@ -190,7 +197,6 @@ def plugin_dir_for_path(path):
 
 
 class PluginManager(QtCore.QObject):
-
     plugin_installed = QtCore.pyqtSignal(PluginWrapper, bool)
     plugin_updated = QtCore.pyqtSignal(str, bool)
     plugin_removed = QtCore.pyqtSignal(str, bool)
@@ -199,6 +205,7 @@ class PluginManager(QtCore.QObject):
 
     def __init__(self, plugins_directory=None):
         super().__init__()
+        self.tagger = QtCore.QCoreApplication.instance()
         self.plugins = []
         self._available_plugins = None  # None=never loaded, [] = empty
         if plugins_directory is None:
@@ -261,9 +268,11 @@ class PluginManager(QtCore.QObject):
             name = _plugin_name_from_path(path)
             if name:
                 names.add(name)
-        log.debug("Looking for plugins in directory %r, %d names found",
-                  plugindir,
-                  len(names))
+        log.debug(
+            "Looking for plugins in directory %r, %d names found",
+            plugindir,
+            len(names),
+        )
         for name in sorted(names):
             try:
                 self._load_plugin(name)
@@ -279,38 +288,39 @@ class PluginManager(QtCore.QObject):
     def _load_plugin(self, name):
         existing_plugin, existing_plugin_index = self._get_plugin_index_by_name(name)
         if existing_plugin:
-            log.debug("Ignoring already loaded plugin %r (version %r at %r)",
+            log.debug(
+                "Ignoring already loaded plugin %r (version %r at %r)",
                 existing_plugin.module_name,
                 existing_plugin.version,
-                existing_plugin.file)
+                existing_plugin.file,
+            )
             return
 
         spec = None
         module_pathname = None
         zip_importer = None
         manifest_data = None
-        full_module_name = _PLUGIN_MODULE_PREFIX + name
+        full_module_name = PLUGIN_MODULE_PREFIX + name
+        plugin_dir = None
 
-        # Legacy loading of ZIP plugins. In Python >= 3.10 this is all handled
-        # by PluginMetaPathFinder. Remove once Python 3.9 is no longer supported.
-        if not hasattr(zipimport.zipimporter, 'find_spec'):
-            (zip_importer, plugin_dir, module_pathname, manifest_data) = self._legacy_load_zip_plugin(name)
-
-        if not module_pathname:
-            spec = PluginMetaPathFinder().find_spec(full_module_name, [])
-            if not spec or not spec.loader:
-                errorfmt = _('Failed loading plugin "%(plugin)s"')
-                self.plugin_error(name, errorfmt, params={
+        spec = PluginMetaPathFinder().find_spec(full_module_name, [])
+        if not spec or not spec.loader:
+            errorfmt = _('Failed loading plugin "%(plugin)s"')
+            self.plugin_error(
+                name,
+                errorfmt,
+                params={
                     'plugin': name,
-                })
-                return None
+                },
+            )
+            return None
 
-            module_pathname = spec.origin
-            if isinstance(spec.loader, zipimport.zipimporter):
-                manifest_data = load_zip_manifest(spec.loader.archive)
-            if os.path.basename(module_pathname) == '__init__.py':
-                module_pathname = os.path.dirname(module_pathname)
-            plugin_dir = plugin_dir_for_path(module_pathname)
+        module_pathname = spec.origin
+        if isinstance(spec.loader, zipimport.zipimporter):
+            manifest_data = load_zip_manifest(spec.loader.archive)
+        if os.path.basename(module_pathname) == '__init__.py':
+            module_pathname = os.path.dirname(module_pathname)
+        plugin_dir = plugin_dir_for_path(module_pathname)
 
         plugin = None
         try:
@@ -330,15 +340,15 @@ class PluginManager(QtCore.QObject):
                     del sys.modules[full_module_name]
                     raise
 
-            plugin = PluginWrapper(plugin_module, plugin_dir,
-                                   file=module_pathname, manifest_data=manifest_data)
+            plugin = PluginWrapper(plugin_module, plugin_dir, file=module_pathname, manifest_data=manifest_data)
             compatible_versions = _compatible_api_versions(plugin.api_versions)
             if compatible_versions:
-                log.debug("Loading plugin %r version %s, compatible with API: %s",
-                          plugin.name,
-                          plugin.version,
-                          ", ".join([v.to_string(short=True) for v in
-                                     sorted(compatible_versions)]))
+                log.debug(
+                    "Loading plugin %r version %s, compatible with API: %s",
+                    plugin.name,
+                    plugin.version,
+                    ", ".join([v.short_str() for v in sorted(compatible_versions)]),
+                )
                 plugin.compatible = True
                 setattr(picard.plugins, name, plugin_module)
                 if existing_plugin:
@@ -346,48 +356,32 @@ class PluginManager(QtCore.QObject):
                 else:
                     self.plugins.append(plugin)
             else:
-                errorfmt = _('Plugin "%(plugin)s" from "%(filename)s" is not '
-                             'compatible with this version of Picard.')
+                errorfmt = _('Plugin "%(plugin)s" from "%(filename)s" is not compatible with this version of Picard.')
                 params = {'plugin': plugin.name, 'filename': plugin.file}
                 self.plugin_error(plugin.name, errorfmt, params=params, log_func=log.warning)
         except VersionError as e:
             errorfmt = _('Plugin "%(plugin)s" has an invalid API version string: %(error)s')
-            self.plugin_error(name, errorfmt, params={
-                'plugin': name,
-                'error': e,
-            })
+            self.plugin_error(
+                name,
+                errorfmt,
+                params={
+                    'plugin': name,
+                    'error': e,
+                },
+            )
         except BaseException:
             errorfmt = _('Plugin "%(plugin)s"')
-            self.plugin_error(name, errorfmt, log_func=log.exception,
-                              params={'plugin': name})
+            self.plugin_error(name, errorfmt, log_func=log.exception, params={'plugin': name})
         return plugin
-
-    def _legacy_load_zip_plugin(self, name):
-        for plugin_dir in plugin_dirs():
-            zipfilename = os.path.join(plugin_dir, name + '.zip')
-            zip_importer = zip_import(zipfilename)
-            if zip_importer:
-                if not zip_importer.find_module(name):
-                    errorfmt = _('Failed loading zipped plugin "%(plugin)s" from "%(filename)s"')
-                    self.plugin_error(name, errorfmt, params={
-                        'plugin': name,
-                        'filename': zipfilename,
-                    })
-                    return (None, None, None, None)
-                module_pathname = zip_importer.get_filename(name)
-                manifest_data = load_zip_manifest(zip_importer.archive)
-                return (zip_importer, plugin_dir, module_pathname, manifest_data)
-        return (None, None, None, None)
 
     def _get_existing_paths(self, plugin_name, fileexts):
         dirpath = os.path.join(self.plugins_directory, plugin_name)
         if not os.path.isdir(dirpath):
             dirpath = None
         filenames = {plugin_name + ext for ext in fileexts}
-        filepaths = [os.path.join(self.plugins_directory, f)
-                     for f in os.listdir(self.plugins_directory)
-                     if f in filenames
-                     ]
+        filepaths = [
+            os.path.join(self.plugins_directory, f) for f in os.listdir(self.plugins_directory) if f in filenames
+        ]
         return (dirpath, filepaths)
 
     def _remove_plugin_files(self, plugin_name, with_update=False):
@@ -413,7 +407,7 @@ class PluginManager(QtCore.QObject):
 
     def _remove_plugin(self, plugin_name, with_update=False):
         self._remove_plugin_files(plugin_name, with_update)
-        _unregister_module_extensions(plugin_name)
+        unregister_module_extensions(plugin_name)
         self.plugins = [p for p in self.plugins if p.module_name != plugin_name]
 
     def remove_plugin(self, plugin_name, with_update=False):
@@ -460,10 +454,10 @@ class PluginManager(QtCore.QObject):
 
     def install_plugin(self, path, update=False, plugin_name=None, plugin_data=None):
         """
-            path is either:
-                1) /some/dir/name.py
-                2) /some/dir/name (directory containing __init__.py)
-                3) /some/dir/name.zip (containing either 1 or 2)
+        path is either:
+            1) /some/dir/name.py
+            2) /some/dir/name (directory containing __init__.py)
+            3) /some/dir/name.zip (containing either 1 or 2)
 
         """
         assert path or plugin_name, "path is required if plugin_name is empty"
@@ -511,14 +505,16 @@ class PluginManager(QtCore.QObject):
             self.tagger.window.set_statusbar_message(
                 N_("Error loading plugins list: %(error)s"),
                 {'error': reply.errorString()},
-                echo=log.error
+                echo=log.error,
             )
             self._available_plugins = []
         else:
             try:
-                self._available_plugins = [PluginData(data, key) for key, data in
-                                           response['plugins'].items()
-                                           if _compatible_api_versions(data['api_versions'])]
+                self._available_plugins = [
+                    PluginData(data, key)
+                    for key, data in response['plugins'].items()
+                    if _compatible_api_versions(data['api_versions'])
+                ]
             except (AttributeError, KeyError, TypeError):
                 self._available_plugins = []
         if callback:
@@ -553,9 +549,9 @@ class PluginManager(QtCore.QObject):
 
 class PluginMetaPathFinder(MetaPathFinder):
     def find_spec(self, fullname, path, target=None):
-        if not fullname.startswith(_PLUGIN_MODULE_PREFIX):
+        if not fullname.startswith(PLUGIN_MODULE_PREFIX):
             return None
-        plugin_name = fullname[len(_PLUGIN_MODULE_PREFIX):]
+        plugin_name = fullname[len(PLUGIN_MODULE_PREFIX) :]
         for plugin_dir in plugin_dirs():
             for file_path in self._plugin_file_paths(plugin_dir, plugin_name):
                 if os.path.exists(file_path):

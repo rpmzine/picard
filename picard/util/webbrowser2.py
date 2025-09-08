@@ -4,10 +4,10 @@
 #
 # Copyright (C) 2006-2007 Lukáš Lalinský
 # Copyright (C) 2011 Calvin Walton
-# Copyright (C) 2013, 2018-2021 Laurent Monin
+# Copyright (C) 2013, 2018-2021, 2024 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2018 Wieland Hoffmann
-# Copyright (C) 2019 Philipp Wolfer
+# Copyright (C) 2019, 2022-2023 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -31,9 +31,10 @@ It handles and displays errors in PyQt and also adds a utility function for open
 
 import webbrowser
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
 from picard.const import PICARD_URLS
+from picard.i18n import gettext as _
 
 
 def open(url):
@@ -42,4 +43,6 @@ def open(url):
     try:
         webbrowser.open(url)
     except webbrowser.Error as e:
-        QtWidgets.QMessageBox.critical(None, _("Web Browser Error"), _("Error while launching a web browser:\n\n%s") % (e,))
+        QtWidgets.QMessageBox.critical(
+            None, _("Web Browser Error"), _("Error while launching a web browser:\n\n%s") % (e,)
+        )

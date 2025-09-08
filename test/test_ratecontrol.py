@@ -18,6 +18,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from collections import defaultdict
 
 from test.picardtestcase import PicardTestCase
@@ -26,7 +27,6 @@ from picard.webservice import ratecontrol
 
 
 class RateControlTest(PicardTestCase):
-
     def setUp(self):
         super().setUp()
         ratecontrol.REQUEST_DELAY_MINIMUM = defaultdict(lambda: 1000)

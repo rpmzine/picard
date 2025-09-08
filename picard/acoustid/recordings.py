@@ -2,7 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2023 Philipp Wolfer
+# Copyright (C) 2023-2024 Philipp Wolfer
+# Copyright (C) 2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -18,6 +19,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from collections import (
     defaultdict,
     deque,
@@ -29,7 +31,7 @@ from typing import (
     List,
 )
 
-from PyQt5.QtNetwork import QNetworkReply
+from PyQt6.QtNetwork import QNetworkReply
 
 from picard.acoustid.json_helpers import (
     parse_recording,
@@ -97,14 +99,18 @@ class RecordingResolver:
                         sources=sources,
                     )
                 else:
-                    if (sources / max_sources > SOURCE_THRESHOLD_NO_METADATA
-                        and incomplete_counts[acoustid] < MAX_NO_METADATA_RECORDINGS):
-                        self._missing_metadata.append(IncompleteRecording(
-                            mbid=mbid,
-                            acoustid=acoustid,
-                            result_score=result_score,
-                            sources=sources,
-                        ))
+                    if (
+                        sources / max_sources > SOURCE_THRESHOLD_NO_METADATA
+                        and incomplete_counts[acoustid] < MAX_NO_METADATA_RECORDINGS
+                    ):
+                        self._missing_metadata.append(
+                            IncompleteRecording(
+                                mbid=mbid,
+                                acoustid=acoustid,
+                                result_score=result_score,
+                                sources=sources,
+                            )
+                        )
                         incomplete_counts[acoustid] += 1
 
         self._load_recordings()

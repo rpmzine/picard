@@ -4,6 +4,7 @@
 #
 # Copyright (C) 2014, 2020 Laurent Monin
 # Copyright (C) 2021 Philipp Wolfer
+# Copyright (C) 2024 Giorgio Fontanive
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -29,14 +30,19 @@ from picard.util import imageinfo
 
 
 class IdentifyTest(PicardTestCase):
-
     def test_gif(self):
         file = get_test_data_path('mb.gif')
 
         with open(file, 'rb') as f:
             self.assertEqual(
                 imageinfo.identify(f.read()),
-                (140, 96, 'image/gif', '.gif', 5806)
+                imageinfo.ImageInfo(
+                    width=140,
+                    height=96,
+                    mime='image/gif',
+                    extension='.gif',
+                    datalen=5806,
+                ),
             )
 
     def test_png(self):
@@ -45,7 +51,13 @@ class IdentifyTest(PicardTestCase):
         with open(file, 'rb') as f:
             self.assertEqual(
                 imageinfo.identify(f.read()),
-                (140, 96, 'image/png', '.png', 11137)
+                imageinfo.ImageInfo(
+                    width=140,
+                    height=96,
+                    mime='image/png',
+                    extension='.png',
+                    datalen=11137,
+                ),
             )
 
     def test_jpeg(self):
@@ -54,7 +66,13 @@ class IdentifyTest(PicardTestCase):
         with open(file, 'rb') as f:
             self.assertEqual(
                 imageinfo.identify(f.read()),
-                (140, 96, 'image/jpeg', '.jpg', 8550)
+                imageinfo.ImageInfo(
+                    width=140,
+                    height=96,
+                    mime='image/jpeg',
+                    extension='.jpg',
+                    datalen=8550,
+                ),
             )
 
     def test_webp_vp8(self):
@@ -63,7 +81,13 @@ class IdentifyTest(PicardTestCase):
         with open(file, 'rb') as f:
             self.assertEqual(
                 imageinfo.identify(f.read()),
-                (140, 96, 'image/webp', '.webp', 6178)
+                imageinfo.ImageInfo(
+                    width=140,
+                    height=96,
+                    mime='image/webp',
+                    extension='.webp',
+                    datalen=6178,
+                ),
             )
 
     def test_webp_vp8l(self):
@@ -72,7 +96,13 @@ class IdentifyTest(PicardTestCase):
         with open(file, 'rb') as f:
             self.assertEqual(
                 imageinfo.identify(f.read()),
-                (140, 96, 'image/webp', '.webp', 9432)
+                imageinfo.ImageInfo(
+                    width=140,
+                    height=96,
+                    mime='image/webp',
+                    extension='.webp',
+                    datalen=9432,
+                ),
             )
 
     def test_webp_vp8x(self):
@@ -81,7 +111,13 @@ class IdentifyTest(PicardTestCase):
         with open(file, 'rb') as f:
             self.assertEqual(
                 imageinfo.identify(f.read()),
-                (140, 96, 'image/webp', '.webp', 6858)
+                imageinfo.ImageInfo(
+                    width=140,
+                    height=96,
+                    mime='image/webp',
+                    extension='.webp',
+                    datalen=6858,
+                ),
             )
 
     def test_webp_insufficient_data(self):
@@ -94,7 +130,13 @@ class IdentifyTest(PicardTestCase):
         with open(file, 'rb') as f:
             self.assertEqual(
                 imageinfo.identify(f.read()),
-                (140, 96, 'image/tiff', '.tiff', 12509)
+                imageinfo.ImageInfo(
+                    width=140,
+                    height=96,
+                    mime='image/tiff',
+                    extension='.tiff',
+                    datalen=12509,
+                ),
             )
 
     def test_pdf(self):
@@ -103,30 +145,30 @@ class IdentifyTest(PicardTestCase):
         with open(file, 'rb') as f:
             self.assertEqual(
                 imageinfo.identify(f.read()),
-                (0, 0, 'application/pdf', '.pdf', 10362)
+                imageinfo.ImageInfo(
+                    width=0,
+                    height=0,
+                    mime='application/pdf',
+                    extension='.pdf',
+                    datalen=10362,
+                ),
             )
 
     def test_not_enough_data(self):
-        self.assertRaises(imageinfo.IdentificationError,
-                          imageinfo.identify, "x")
+        self.assertRaises(imageinfo.IdentificationError, imageinfo.identify, "x")
         self.assertRaises(imageinfo.NotEnoughData, imageinfo.identify, "x")
 
     def test_invalid_data(self):
-        self.assertRaises(imageinfo.IdentificationError,
-                          imageinfo.identify, "x" * 20)
-        self.assertRaises(imageinfo.UnrecognizedFormat,
-                          imageinfo.identify, "x" * 20)
+        self.assertRaises(imageinfo.IdentificationError, imageinfo.identify, "x" * 20)
+        self.assertRaises(imageinfo.UnrecognizedFormat, imageinfo.identify, "x" * 20)
 
     def test_invalid_png_data(self):
-        data = '\x89PNG\x0D\x0A\x1A\x0A' + "x" * 20
-        self.assertRaises(imageinfo.IdentificationError,
-                          imageinfo.identify, data)
-        self.assertRaises(imageinfo.UnrecognizedFormat,
-                          imageinfo.identify, data)
+        data = '\x89PNG\x0d\x0a\x1a\x0a' + "x" * 20
+        self.assertRaises(imageinfo.IdentificationError, imageinfo.identify, data)
+        self.assertRaises(imageinfo.UnrecognizedFormat, imageinfo.identify, data)
 
 
 class SupportsMimeTypeTest(PicardTestCase):
-
     def test_supported_mime_types(self):
         self.assertTrue(imageinfo.supports_mime_type('application/pdf'))
         self.assertTrue(imageinfo.supports_mime_type('image/gif'))
@@ -141,7 +183,6 @@ class SupportsMimeTypeTest(PicardTestCase):
 
 
 class GetSupportedExtensionsTest(PicardTestCase):
-
     def test_supported_extensions(self):
         extensions = list(imageinfo.get_supported_extensions())
         self.assertIn('.jpeg', extensions)

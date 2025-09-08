@@ -4,8 +4,8 @@
 #
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2017-2018 Wieland Hoffmann
-# Copyright (C) 2018, 2020-2021 Laurent Monin
-# Copyright (C) 2019-2022 Philipp Wolfer
+# Copyright (C) 2018, 2020-2024 Laurent Monin
+# Copyright (C) 2019-2024 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -28,8 +28,8 @@ from unittest.mock import (
     patch,
 )
 
-from PyQt5.QtCore import QUrl
-from PyQt5.QtNetwork import (
+from PyQt6.QtCore import QUrl
+from PyQt6.QtNetwork import (
     QNetworkProxy,
     QNetworkRequest,
 )
@@ -61,6 +61,7 @@ PROXY_SETTINGS = {
     "proxy_username": 'user',
     "proxy_password": 'password',
     "network_transfer_timeout_seconds": 30,
+    "network_cache_size_bytes": 100 * 1000 * 1000,
 }
 
 
@@ -69,41 +70,17 @@ def dummy_handler(*args, **kwargs):
 
 
 class WebServiceTest(PicardTestCase):
-
     def setUp(self):
         super().setUp()
-        self.set_config_values({
-            'use_proxy': False,
-            'server_host': '',
-            'network_transfer_timeout_seconds': 30,
-        })
+        self.set_config_values(
+            {
+                'use_proxy': False,
+                'server_host': '',
+                'network_transfer_timeout_seconds': 30,
+                'network_cache_size_bytes': 100 * 1000 * 1000,
+            }
+        )
         self.ws = WebService()
-
-    @patch.object(WebService, 'add_task')
-    def test_webservice_method_calls(self, mock_add_task):
-        host = "abc.xyz"
-        port = 80
-        path = ""
-        handler = dummy_handler
-        data = None
-
-        def get_wsreq(mock_add_task):
-            return mock_add_task.call_args[0][1]
-
-        self.ws.get(host, port, path, handler)
-        self.assertEqual(1, mock_add_task.call_count)
-        self.assertEqual(host, get_wsreq(mock_add_task).host)
-        self.assertEqual(port, get_wsreq(mock_add_task).port)
-        self.assertIn("GET", get_wsreq(mock_add_task).method)
-        self.ws.post(host, port, path, data, handler)
-        self.assertIn("POST", get_wsreq(mock_add_task).method)
-        self.ws.put(host, port, path, data, handler)
-        self.assertIn("PUT", get_wsreq(mock_add_task).method)
-        self.ws.delete(host, port, path, handler)
-        self.assertIn("DELETE", get_wsreq(mock_add_task).method)
-        self.ws.download(host, port, path, handler)
-        self.assertIn("GET", get_wsreq(mock_add_task).method)
-        self.assertEqual(5, mock_add_task.call_count)
 
     @patch.object(WebService, 'add_task')
     def test_webservice_url_method_calls(self, mock_add_task):
@@ -131,13 +108,15 @@ class WebServiceTest(PicardTestCase):
 
 
 class WebServiceTaskTest(PicardTestCase):
-
     def setUp(self):
         super().setUp()
-        self.set_config_values({
-            'use_proxy': False,
-            'network_transfer_timeout_seconds': 30,
-        })
+        self.set_config_values(
+            {
+                'use_proxy': False,
+                'network_transfer_timeout_seconds': 30,
+                'network_cache_size_bytes': 100 * 1000 * 1000,
+            }
+        )
         self.ws = WebService()
         self.queue = self.ws._queue = MagicMock()
 
@@ -209,7 +188,6 @@ class WebServiceTaskTest(PicardTestCase):
 
 
 class RequestTaskTest(PicardTestCase):
-
     def test_from_request(self):
         request = WSRequest(
             method='GET',
@@ -226,7 +204,6 @@ class RequestTaskTest(PicardTestCase):
 
 
 class RequestPriorityQueueTest(PicardTestCase):
-
     def test_add_task(self):
         queue = RequestPriorityQueue(ratecontrol)
         key = ("abc.xyz", 80)
@@ -344,7 +321,6 @@ class RequestPriorityQueueTest(PicardTestCase):
 
 
 class WebServiceProxyTest(PicardTestCase):
-
     def setUp(self):
         super().setUp()
         self.set_config_values(PROXY_SETTINGS)
@@ -366,7 +342,6 @@ class WebServiceProxyTest(PicardTestCase):
 
 
 class ParserHookTest(PicardTestCase):
-
     def test_parser_hook(self):
         WebService.add_parser('A', 'mime', 'parser')
 
@@ -383,7 +358,6 @@ class ParserHookTest(PicardTestCase):
 
 
 class WSRequestTest(PicardTestCase):
-
     def test_init_minimal(self):
         request = WSRequest(url='https://example.org/path', method='GET', handler=dummy_handler)
         self.assertEqual(request.host, 'example.org')
@@ -513,7 +487,7 @@ class WSRequestTest(PicardTestCase):
             handler=dummy_handler,
         )
         for i in range(0, TEMP_ERRORS_RETRIES):
-            self.assertEqual(request.mark_for_retry(), i+1)
+            self.assertEqual(request.mark_for_retry(), i + 1)
 
         self.assertTrue(request.max_retries_reached())
 
@@ -560,7 +534,6 @@ class WSRequestTest(PicardTestCase):
 
 
 class WebServiceUtilsTest(PicardTestCase):
-
     def test_port_from_qurl_http(self):
         self.assertEqual(port_from_qurl(QUrl('http://example.org')), 80)
 
@@ -584,16 +557,31 @@ class WebServiceUtilsTest(PicardTestCase):
         self.assertEqual(hostkey_from_url('https://example.org:666'), ('example.org', 666))
 
     def test_host_port_to_url_http_80(self):
-        self.assertEqual(host_port_to_url('example.org', 80, as_string=True), 'http://example.org')
+        self.assertEqual(
+            host_port_to_url('example.org', 80, as_string=True),
+            'http://example.org',
+        )
 
     def test_host_port_to_url_http_80_qurl(self):
-        self.assertEqual(host_port_to_url('example.org', 80).toString(), 'http://example.org')
+        self.assertEqual(
+            host_port_to_url('example.org', 80).toString(),
+            'http://example.org',
+        )
 
     def test_host_port_to_url_https_443(self):
-        self.assertEqual(host_port_to_url('example.org', 443, as_string=True), 'https://example.org')
+        self.assertEqual(
+            host_port_to_url('example.org', 443, as_string=True),
+            'https://example.org',
+        )
 
     def test_host_port_to_url_https_scheme_80(self):
-        self.assertEqual(host_port_to_url('example.org', 80, scheme='https', as_string=True), 'https://example.org:80')
+        self.assertEqual(
+            host_port_to_url('example.org', 80, scheme='https', as_string=True),
+            'https://example.org:80',
+        )
 
     def test_host_port_to_url_http_666_with_path(self):
-        self.assertEqual(host_port_to_url('example.org', 666, path='/abc', as_string=True), 'http://example.org:666/abc')
+        self.assertEqual(
+            host_port_to_url('example.org', 666, path='/abc', as_string=True),
+            'http://example.org:666/abc',
+        )
