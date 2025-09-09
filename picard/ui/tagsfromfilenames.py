@@ -9,7 +9,7 @@
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Ville Skyttä
 # Copyright (C) 2018 Vishal Choudhary
-# Copyright (C) 2018, 2020-2022 Laurent Monin
+# Copyright (C) 2018, 2020-2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -30,17 +30,15 @@ from collections import OrderedDict
 import os.path
 import re
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
-from picard.config import (
-    TextOption,
-    get_config,
-)
+from picard.config import get_config
+from picard.i18n import gettext as _
 from picard.script.parser import normalize_tagname
-from picard.util.tags import display_tag_name
+from picard.tags import display_tag_name
 
 from picard.ui import PicardDialog
-from picard.ui.ui_tagsfromfilenames import Ui_TagsFromFileNamesDialog
+from picard.ui.forms.ui_tagsfromfilenames import Ui_TagsFromFileNamesDialog
 from picard.ui.util import StandardButton
 
 
@@ -79,11 +77,11 @@ class TagMatchExpression:
         return list(OrderedDict.fromkeys(self._group_map.values()))
 
     def match_file(self, filename):
-        match = self._format_re.search(filename.replace('\\', '/'))
-        if match:
+        match_ = self._format_re.search(filename.replace('\\', '/'))
+        if match_:
             result = {}
             for group, tag in self._group_map.items():
-                value = match.group(group).strip()
+                value = match_.group(group).strip()
                 if tag in self._numeric_tags:
                     value = value.lstrip("0")
                 if self.replace_underscores:
@@ -97,15 +95,10 @@ class TagMatchExpression:
 
 
 class TagsFromFileNamesDialog(PicardDialog):
-
     help_url = 'doc_tags_from_filenames'
 
-    options = [
-        TextOption('persist', 'tags_from_filenames_format', ''),
-    ]
-
     def __init__(self, files, parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.ui = Ui_TagsFromFileNamesDialog()
         self.ui.setupUi(self)
         items = [
@@ -129,7 +122,9 @@ class TagsFromFileNamesDialog(PicardDialog):
         self.ui.format.setCurrentIndex(selected_index)
         self.ui.buttonbox.addButton(StandardButton(StandardButton.HELP), QtWidgets.QDialogButtonBox.ButtonRole.HelpRole)
         self.ui.buttonbox.addButton(StandardButton(StandardButton.OK), QtWidgets.QDialogButtonBox.ButtonRole.AcceptRole)
-        self.ui.buttonbox.addButton(StandardButton(StandardButton.CANCEL), QtWidgets.QDialogButtonBox.ButtonRole.RejectRole)
+        self.ui.buttonbox.addButton(
+            StandardButton(StandardButton.CANCEL), QtWidgets.QDialogButtonBox.ButtonRole.RejectRole
+        )
         self.ui.buttonbox.accepted.connect(self.accept)
         self.ui.buttonbox.rejected.connect(self.reject)
         self.ui.buttonbox.helpRequested.connect(self.show_help)
@@ -148,7 +143,7 @@ class TagsFromFileNamesDialog(PicardDialog):
         headers = [_("File Name")] + list(map(display_tag_name, columns))
         self.ui.files.setColumnCount(len(headers))
         self.ui.files.setHeaderLabels(headers)
-        for item, file in zip(self.items, self.files):
+        for item, file in zip(self.items, self.files, strict=True):
             matches = expression.match_file(file.filename)
             for i, column in enumerate(columns):
                 values = matches.get(column, [])

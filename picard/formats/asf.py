@@ -7,7 +7,7 @@
 # Copyright (C) 2011-2014 Wieland Hoffmann
 # Copyright (C) 2012-2013 Michael Wiencek
 # Copyright (C) 2013 Calvin Walton
-# Copyright (C) 2013-2014, 2018-2021 Laurent Monin
+# Copyright (C) 2013-2014, 2018-2021, 2023-2024 Laurent Monin
 # Copyright (C) 2014-2015, 2017 Sophist-UK
 # Copyright (C) 2016-2018 Sambhav Kothari
 #
@@ -61,7 +61,7 @@ def unpack_image(data):
     try:
         (type_, size) = struct.unpack_from('<bi', data)
     except struct.error as e:
-        raise ValueError(e)
+        raise ValueError(e) from e
     data = data[5:]
 
     mime = b''
@@ -105,12 +105,12 @@ def pack_image(mime, data, image_type=3, description=""):
 
 
 class ASFFile(File):
-
     """
     ASF (WMA) metadata reader/writer
     See http://msdn.microsoft.com/en-us/library/ms867702.aspx for official
     WMA tag specifications.
     """
+
     EXTENSIONS = [".wma", ".wmv", ".asf"]
     NAME = "Windows Media Audio"
     _File = ASF
@@ -215,8 +215,7 @@ class ASFFile(File):
                     try:
                         (mime, data, image_type, description) = unpack_image(image.value)
                     except ValueError as e:
-                        log.warning("Cannot unpack image from %r: %s",
-                                    filename, e)
+                        log.warning("Cannot unpack image from %r: %s", filename, e)
                         continue
                     try:
                         coverartimage = TagCoverArtImage(
@@ -270,8 +269,7 @@ class ASFFile(File):
                 tags['WM/Picture'] = cover
         cover = []
         for image in metadata.images.to_be_saved_to_tags():
-            tag_data = pack_image(image.mimetype, image.data, image.id3_type,
-                                  image.comment)
+            tag_data = pack_image(image.mimetype, image.data, image.id3_type, image.comment)
             cover.append(ASFByteArrayAttribute(tag_data))
         if cover:
             tags['WM/Picture'] = cover
@@ -307,10 +305,12 @@ class ASFFile(File):
 
     @classmethod
     def supports_tag(cls, name):
-        return (name in cls.__TRANS
-                or name in cls.__TRANS_CI
-                or name in {'~rating', 'totaldiscs'}
-                or name.startswith('lyrics:'))
+        return (
+            name in cls.__TRANS
+            or name in cls.__TRANS_CI
+            or name in {'~rating', 'totaldiscs'}
+            or name.startswith('lyrics:')
+        )
 
     def _get_tag_name(self, name):
         if name.startswith('lyrics:'):

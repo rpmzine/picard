@@ -16,21 +16,26 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
-        python-version: 3.8
+        python-version: '>=3.13.5 <3.14'
         cache: 'pip'
+    - name: Install dependencies (Linux)
+      if: runner.os == 'linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install libegl1
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install --upgrade setuptools
+        python -m pip install --upgrade build pytest
         pip install --upgrade -r requirements.txt
     - name: Run tests
       timeout-minutes: 30
       run: |
-        python setup.py test
+        pytest
     - name: Build Python source distribution
       run: |
         git clean -dfx
-        python setup.py clean sdist --formats=gztar,zip
+        python -m build --sdist
     - name: Prepare GPG signing key
       run: |
         if [ -n "$CODESIGN_GPG_URL" ] && [ -n "$AWS_ACCESS_KEY_ID" ]; then
@@ -52,7 +57,7 @@ jobs:
     - name: Sign source archives
       if: env.CODESIGN == '1'
       run: |
-        for f in dist/*.{zip,tar.gz}; do
+        for f in dist/*.tar.gz; do
           gpg --armor --local-user "$CODESIGN_GPG_IDENTITY" --output "${f}.asc" --detach-sig "$f"
         done
       env:
@@ -73,7 +78,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-13, windows-2022]
-        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '>=3.13.5 <3.14']
+        python-version: ['3.10', '3.11', '3.12', '>=3.13.5 <3.14']
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -82,12 +87,6 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
-    - name: Install gettext (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install gettext
-        brew link gettext --force
-        echo "/usr/local/opt/gettext/bin" >> $GITHUB_PATH
     - name: Install gettext (Windows)
       if: runner.os == 'Windows'
       run: |
@@ -98,21 +97,25 @@ jobs:
       env:
         GETTEXT_VERSION: 0.22.4
         GETTEXT_SHA256SUM: 220068ac0b9e7aedda03534a3088e584640ac1e639800b3a0baa9410aa6d012a
+    - name: Install dependencies (Linux)
+      if: runner.os == 'linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install libegl1
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install --upgrade setuptools wheel
+        python -m pip install --upgrade build pytest
         pip install --upgrade -r requirements.txt
     - name: Run tests
       timeout-minutes: 30
       run: |
-        python setup.py test
+        pytest
     - name: Build Python binary distribution
       run: |
-        python setup.py clean bdist_wheel
+        python -m build --wheel
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
         name: picard-bdist-${{ runner.os }}-${{ steps.setup.outputs.python-version }}
         path: dist/*.whl
-

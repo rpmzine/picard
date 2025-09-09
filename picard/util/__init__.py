@@ -12,7 +12,7 @@
 # Copyright (C) 2012, 2014-2015 Wieland Hoffmann
 # Copyright (C) 2013 Ionuț Ciocîrlan
 # Copyright (C) 2013-2014 Sophist-UK
-# Copyright (C) 2013-2014, 2018-2022 Laurent Monin
+# Copyright (C) 2013-2014, 2018-2024 Laurent Monin
 # Copyright (C) 2014 Johannes Dewender
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016 barami
@@ -25,6 +25,8 @@
 # Copyright (C) 2021 Louis Sautier
 # Copyright (C) 2022 Kamil
 # Copyright (C) 2022 skelly37
+# Copyright (C) 2024 Arnab Chakraborty
+# Copyright (C) 2024 ShubhamBhut
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -40,6 +42,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 try:
     from charset_normalizer import detect
 except ImportError:
@@ -52,6 +55,7 @@ from collections import (
     namedtuple,
 )
 from collections.abc import Mapping
+from contextlib import contextmanager
 from itertools import chain
 import json
 import ntpath
@@ -66,23 +70,24 @@ import unicodedata
 
 from dateutil.parser import parse
 
-from PyQt5 import QtCore
-from PyQt5.QtGui import QDesktopServices
+from PyQt6 import QtCore
+from PyQt6.QtGui import QDesktopServices
 
 from picard import log
-from picard.const import (
-    DEFAULT_COPY_TEXT,
-    DEFAULT_NUMBERED_TITLE_FORMAT,
-    MUSICBRAINZ_SERVERS,
-)
+from picard.const import MUSICBRAINZ_SERVERS
 from picard.const.sys import (
     FROZEN_TEMP_PATH,
     IS_FROZEN,
     IS_MACOS,
     IS_WIN,
 )
+from picard.i18n import (
+    gettext as _,
+    gettext_constants,
+)
 
 
+winreg = None
 if IS_WIN:
     import winreg
 
@@ -99,8 +104,8 @@ WIN_LONGPATH_PREFIX = '\\\\?\\'
 
 
 class ReadWriteLockContext:
-    """Context for releasing a locked QReadWriteLock
-    """
+    """Context for releasing a locked QReadWriteLock"""
+
     def __init__(self):
         self.__lock = QtCore.QReadWriteLock()
 
@@ -123,28 +128,6 @@ class ReadWriteLockContext:
 
     def __bool__(self):
         return self._entered > 0
-
-
-class LockableObject(QtCore.QObject):
-    """Read/write lockable object."""
-
-    def __init__(self):
-        super().__init__()
-        self.__context = ReadWriteLockContext()
-
-    def lock_for_read(self):
-        """Lock the object for read operations."""
-        self.__context.lock_for_read()
-        return self.__context
-
-    def lock_for_write(self):
-        """Lock the object for write operations."""
-        self.__context.lock_for_write()
-        return self.__context
-
-    def unlock(self):
-        """Unlock the object."""
-        self.__context.unlock()
 
 
 def process_events_iter(iterable, interval=0.1):
@@ -202,7 +185,7 @@ Translation: Picard will have problems with non-english characters
 def encode_filename(filename):
     """Encode unicode strings to filesystem encoding."""
     if isinstance(filename, str):
-        if os.path.supports_unicode_filenames and sys.platform != "darwin":
+        if os.path.supports_unicode_filenames and not IS_MACOS:
             return filename
         else:
             return filename.encode(_io_encoding, 'replace')
@@ -242,8 +225,7 @@ def system_supports_long_paths():
     try:
         # Long path support can be enabled in Windows 10 version 1607 or later
         if _check_windows_min_version(10, 14393):
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
-                                r"SYSTEM\CurrentControlSet\Control\FileSystem") as key:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem") as key:
                 supported = winreg.QueryValueEx(key, "LongPathsEnabled")[0] == 1
         else:
             supported = False
@@ -317,8 +299,18 @@ def samefile(path1, path2):
 
 
 def format_time(ms, display_zero=False):
-    """Formats time in milliseconds to a string representation."""
+    """Formats time in milliseconds to a string representation.
+
+    Args:
+        ms: Time in milliseconds, must be positive.
+        display_zero: If False, times of 0ms are displayed as '?:??'
+    Raises:
+        ValueError: If `ms` is negative.
+        TypeError: If `ms` is not convertable to an integer.
+    """
     ms = float(ms)
+    if ms < 0:
+        raise ValueError("ms must be greater than or equal to 0")
     if ms == 0 and not display_zero:
         return "?:??"
     duration_seconds = round(ms / 1000)
@@ -356,7 +348,7 @@ def sanitize_date(datestr):
 
 def replace_win32_incompat(string, repl="_", replacements=None):  # noqa: E302
     """Replace win32 filename incompatible characters from ``string`` by
-       ``repl``."""
+    ``repl``."""
     # Don't replace : for windows drive
     if IS_WIN and os.path.isabs(string):
         drive, string = ntpath.splitdrive(string)
@@ -372,6 +364,8 @@ def replace_win32_incompat(string, repl="_", replacements=None):  # noqa: E302
 
 
 _re_non_alphanum = re.compile(r'\W+', re.UNICODE)
+
+
 def strip_non_alnum(string):  # noqa: E302
     """Remove all non-alphanumeric characters from ``string``."""
     return _re_non_alphanum.sub(" ", string).strip()
@@ -477,7 +471,7 @@ def run_executable(executable, *args, timeout=None):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         startupinfo=startupinfo,
-        timeout=timeout
+        timeout=timeout,
     )
 
     # Return (error code, stdout and stderr)
@@ -494,9 +488,10 @@ def open_local_path(path):
 
 _mbid_format = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 _re_mbid_val = re.compile(_mbid_format, re.IGNORECASE)
+
+
 def mbid_validate(string):  # noqa: E302
-    """Test if passed string is a valid mbid
-    """
+    """Test if passed string is a valid mbid"""
     return _re_mbid_val.match(string) is not None
 
 
@@ -505,9 +500,9 @@ def parse_amazon_url(url):
     It returns a dict with host and asin keys on success, None else
     """
     r = re.compile(r'^https?://(?:www.)?(?P<host>.*?)(?:\:[0-9]+)?/.*/(?P<asin>[0-9B][0-9A-Z]{9})(?:[^0-9A-Z]|$)')
-    match = r.match(url)
-    if match is not None:
-        return match.groupdict()
+    match_ = r.match(url)
+    if match_ is not None:
+        return match_.groupdict()
     return None
 
 
@@ -535,7 +530,7 @@ def throttle(interval):
                 return
             mutex.lock()
             now = monotonic()
-            r = interval - (now-decorator.prev)*1000.0
+            r = interval - (now - decorator.prev) * 1000.0
             if r <= 0:
                 func(*args, **kwargs)
                 decorator.prev = now
@@ -569,17 +564,26 @@ class IgnoreUpdatesContext:
     updates if it is `False`.
     """
 
-    def __init__(self, onexit=None):
+    def __init__(self, on_exit=None, on_enter=None, on_first_enter=None, on_last_exit=None):
         self._entered = 0
-        self._onexit = onexit
+        self._on_exit = on_exit
+        self._on_last_exit = on_last_exit
+        self._on_enter = on_enter
+        self._on_first_enter = on_first_enter
 
     def __enter__(self):
         self._entered += 1
+        if self._on_enter:
+            self._on_enter()
+        if self._entered == 1 and self._on_first_enter:
+            self._on_first_enter()
 
-    def __exit__(self, type, value, tb):
+    def __exit__(self, exc_type, exc_value, traceback):
         self._entered -= 1
-        if self._onexit:
-            self._onexit()
+        if self._on_exit:
+            self._on_exit()
+        if self._entered == 0 and self._on_last_exit:
+            self._on_last_exit()
 
     def __bool__(self):
         return self._entered > 0
@@ -597,20 +601,23 @@ def iter_unique(seq):
 
 
 # order is important
-_tracknum_regexps = [re.compile(r, re.I) for r in (
-    # search for explicit track number (prefix "track")
-    r"track[\s_-]*(?:(?:no|nr)\.?)?[\s_-]*(?P<number>\d+)",
-    # search for 1- or 2-digit number at start of string (additional leading zeroes are allowed)
-    # An optional disc number preceding the track number is ignored.
-    r"^(?:\d+[\s_-])?(?P<number>0*\d{1,2})(?:\.)[^0-9,]",  # "99. ", but not "99.02"
-    r"^(?:\d+[\s_-])?(?P<number>0*\d{1,2})[^0-9,.s]",
-    # search for 2-digit number at end of string (additional leading zeroes are allowed)
-    r"[^0-9,.\w](?P<number>0*\d{2})$",
-    r"[^0-9,.\w]\[(?P<number>0*\d{1,2})\]$",
-    r"[^0-9,.\w]\((?P<number>0*\d{2})\)$",
-    # File names which consist of only a number
-    r"^(?P<number>\d+)$",
-)]
+_tracknum_regexps = [
+    re.compile(r, re.I)
+    for r in (
+        # search for explicit track number (prefix "track")
+        r"track[\s_-]*(?:(?:no|nr)\.?)?[\s_-]*(?P<number>\d+)",
+        # search for 1- or 2-digit number at start of string (additional leading zeroes are allowed)
+        # An optional disc number preceding the track number is ignored.
+        r"^(?:\d+[\s_-])?(?P<number>0*\d{1,2})(?:\.)[^0-9,]",  # "99. ", but not "99.02"
+        r"^(?:\d+[\s_-])?(?P<number>0*\d{1,2})[^0-9,.s]",
+        # search for 2-digit number at end of string (additional leading zeroes are allowed)
+        r"[^0-9,.\w](?P<number>0*\d{2})$",
+        r"[^0-9,.\w]\[(?P<number>0*\d{1,2})\]$",
+        r"[^0-9,.\w]\((?P<number>0*\d{2})\)$",
+        # File names which consist of only a number
+        r"^(?P<number>\d+)$",
+    )
+]
 
 
 def tracknum_from_filename(base_filename):
@@ -619,9 +626,9 @@ def tracknum_from_filename(base_filename):
     """
     filename, _ext = os.path.splitext(base_filename)
     for pattern in _tracknum_regexps:
-        match = pattern.search(filename)
-        if match:
-            n = int(match.group('number'))
+        match_ = pattern.search(filename)
+        if match_:
+            n = int(match_.group('number'))
             # Numbers above 1900 are often years, track numbers should be much
             # smaller even for extensive collections
             if n > 0 and n < 1900:
@@ -649,7 +656,7 @@ def tracknum_and_title_from_filename(base_filename):
         if stripped_filename[:tnlen] == tracknumber:
             # Strip the dot in front of the tracknumber, if present
             dot_offset = 1 if stripped_filename[tnlen:][0] == '.' else 0
-            title = stripped_filename[tnlen + dot_offset:].lstrip()
+            title = stripped_filename[tnlen + dot_offset :].lstrip()
 
     return GuessedFromFilename(tracknumber, title)
 
@@ -660,8 +667,7 @@ def is_hidden(filepath):
     on non-Windows systems or if it has the "hidden" flag
     set on Windows."""
     name = os.path.basename(os.path.abspath(filepath))
-    return (not IS_WIN and name.startswith('.')) \
-        or _has_hidden_attribute(filepath)
+    return (not IS_WIN and name.startswith('.')) or _has_hidden_attribute(filepath)
 
 
 if IS_WIN:
@@ -686,6 +692,7 @@ elif IS_MACOS:
         return result[1]
 
 else:
+
     def _has_hidden_attribute(filepath):
         return False
 
@@ -747,10 +754,7 @@ def encoded_queryargs(queryargs):
     Percent-encode all values from passed dictionary
     Keys are left unmodified
     """
-    return {
-        name: bytes(QtCore.QUrl.toPercentEncoding(str(value))).decode()
-        for name, value in queryargs.items()
-    }
+    return {name: bytes(QtCore.QUrl.toPercentEncoding(str(value))).decode() for name, value in queryargs.items()}
 
 
 def build_qurl(host, port=80, path=None, queryargs=None):
@@ -850,8 +854,10 @@ def parse_json(reply):
 
 def restore_method(func):
     def func_wrapper(*args, **kwargs):
-        if not QtCore.QObject.tagger._no_restore:
+        tagger = QtCore.QCoreApplication.instance()
+        if not tagger._no_restore:
             return func(*args, **kwargs)
+
     return func_wrapper
 
 
@@ -873,6 +879,20 @@ def reconnect(signal, newhandler=None, oldhandler=None):
             break
     if newhandler is not None:
         signal.connect(newhandler)
+
+
+@contextmanager
+def temporary_disconnect(signal, *handlers):
+    """
+    Create context to temporarly disconnect one or more signal handlers
+    """
+    try:
+        for handler in handlers:
+            signal.disconnect(handler)
+        yield
+    finally:
+        for handler in handlers:
+            signal.connect(handler)
 
 
 def compare_barcodes(barcode1, barcode2):
@@ -901,11 +921,7 @@ def sort_by_similarity(candidates):
         candidates: Iterable with objects having a `similarity`  attribute
     Returns: List of candidates sorted by similarity (highest similarity first)
     """
-    return sorted(
-        candidates,
-        reverse=True,
-        key=attrgetter('similarity')
-    )
+    return sorted(candidates, reverse=True, key=attrgetter('similarity'))
 
 
 def find_best_match(candidates, no_match):
@@ -919,24 +935,6 @@ def find_best_match(candidates, no_match):
     """
     best_match = max(candidates, key=attrgetter('similarity'), default=no_match)
     return BestMatch(similarity=best_match.similarity, result=best_match)
-
-
-def get_qt_enum(cls, attr_class):
-    """
-    Generate all the names of attributes inside a class that are instances of a specific class
-
-    Args:
-        cls: the class in which to search attributes
-        attr_class: class of attributes to match
-
-    Example:
-        >>> from PyQt5.Qt import Qt
-        >>> print(list(get_qt_enum(Qt, Qt.CoordinateSystem)))
-        ['DeviceCoordinates', 'LogicalCoordinates']
-    """
-    for key in dir(cls):
-        if isinstance(getattr(cls, key), attr_class):
-            yield key
 
 
 def limited_join(a_list, limit, join_string='+', middle_string='…'):
@@ -980,7 +978,7 @@ def countries_shortlist(countries):
 
 
 def extract_year_from_date(dt):
-    """ Extracts year from  passed in date either dict or string """
+    """Extracts year from  passed in date either dict or string"""
 
     try:
         if isinstance(dt, Mapping):
@@ -1018,7 +1016,7 @@ def pattern_as_regex(pattern, allow_wildcards=False, flags=0):
     """
     plain_pattern = pattern.rstrip('im')
     if len(plain_pattern) > 2 and plain_pattern[0] == '/' and plain_pattern[-1] == '/':
-        extra_flags = pattern[len(plain_pattern):]
+        extra_flags = pattern[len(plain_pattern) :]
         if 'i' in extra_flags:
             flags |= re.IGNORECASE
         if 'm' in extra_flags:
@@ -1107,18 +1105,25 @@ def _regex_numbered_title_fmt(fmt, title_repl, count_repl):
             return p
 
     return (
-        re.escape(title_marker).join(wrap_count(p) for p in parts)
+        re.escape(title_marker)
+        .join(wrap_count(p) for p in parts)
         .replace(re.escape(title_marker), title_repl)
         .replace(re.escape(count_marker), count_repl)
     )
 
 
+def _get_default_numbered_title_format():
+    from picard.const.defaults import DEFAULT_NUMBERED_TITLE_FORMAT
+
+    return gettext_constants(DEFAULT_NUMBERED_TITLE_FORMAT)
+
+
 def unique_numbered_title(default_title, existing_titles, fmt=None):
     """Generate a new unique and numbered title
-       based on given default title and existing titles
+    based on given default title and existing titles
     """
     if fmt is None:
-        fmt = gettext_constants(DEFAULT_NUMBERED_TITLE_FORMAT)
+        fmt = _get_default_numbered_title_format()
 
     escaped_title = re.escape(default_title)
     reg_count = r'(\d+)'
@@ -1138,24 +1143,23 @@ def unique_numbered_title(default_title, existing_titles, fmt=None):
 
 def get_base_title_with_suffix(title, suffix, fmt=None):
     """Extract the base portion of a title,
-       removing the suffix and number portion from the end.
+    removing the suffix and number portion from the end.
     """
     if fmt is None:
-        fmt = gettext_constants(DEFAULT_NUMBERED_TITLE_FORMAT)
+        fmt = _get_default_numbered_title_format()
 
     escaped_suffix = re.escape(suffix)
     reg_title = r'(?P<title>.*?)(?:\s*' + escaped_suffix + ')?'
     reg_count = r'\d*'
-    regstr = _regex_numbered_title_fmt(fmt, reg_title, reg_count)\
-        .replace(r'\ ', r'\s+')\
-        .replace(' ', r'\s+')
+    regstr = _regex_numbered_title_fmt(fmt, reg_title, reg_count).replace(r'\ ', r'\s+').replace(' ', r'\s+')
     match_obj = re.fullmatch(regstr, title)
     return match_obj['title'] if match_obj else title
 
 
 def get_base_title(title):
-    """Extract the base portion of a title, using the standard suffix.
-    """
+    """Extract the base portion of a title, using the standard suffix."""
+    from picard.const.defaults import DEFAULT_COPY_TEXT
+
     suffix = gettext_constants(DEFAULT_COPY_TEXT)
     return get_base_title_with_suffix(title, suffix)
 
@@ -1184,7 +1188,7 @@ ENCODING_BOMS = {
 }
 
 
-def detect_file_encoding(path, max_bytes_to_read=1024*256):
+def detect_file_encoding(path, max_bytes_to_read=1024 * 256):
     """Attempts to guess the unicode encoding of a file based on the BOM, and
     depending on avalibility, using a charset detection method.
 
@@ -1223,7 +1227,7 @@ def detect_file_encoding(path, max_bytes_to_read=1024*256):
 def iswbound(char):
     # GPL 2.0 licensed code by Javier Kohen, Sambhav Kothari
     # from https://github.com/metabrainz/picard-plugins/blob/2.0/plugins/titlecase/titlecase.py
-    """ Checks whether the given character is a word boundary """
+    """Checks whether the given character is a word boundary"""
     category = unicodedata.category(char)
     return 'Zs' == category or 'Sk' == category or 'P' == category[0]
 
@@ -1255,7 +1259,7 @@ def titlecase(text):
     capital = False
     for i in range(1, len(text)):
         t = text[i]
-        if t in "’'" and text[i-1].isalpha():
+        if t in "’'" and text[i - 1].isalpha():
             capital = False
         elif iswbound(t):
             capital = True

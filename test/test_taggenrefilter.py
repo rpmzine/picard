@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2019 Wieland Hoffmann
-# Copyright (C) 2019-2021 Laurent Monin
-# Copyright (C) 2020-2021 Philipp Wolfer
+# Copyright (C) 2019-2022 Laurent Monin
+# Copyright (C) 2020-2021, 2024 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -20,6 +20,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from collections import Counter
 
 from test.picardtestcase import PicardTestCase
@@ -28,7 +29,6 @@ from picard.track import TagGenreFilter
 
 
 class TagGenreFilterTest(PicardTestCase):
-
     def test_no_filter(self):
         tag_filter = TagGenreFilter("# comment")
         self.assertFalse(tag_filter.skip('jazz'))

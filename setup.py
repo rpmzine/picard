@@ -6,7 +6,7 @@
 # Copyright (C) 2006-2008, 2011-2014, 2017 Lukáš Lalinský
 # Copyright (C) 2007 Santiago M. Mola
 # Copyright (C) 2008 Robert Kaye
-# Copyright (C) 2008-2009, 2018-2022 Philipp Wolfer
+# Copyright (C) 2008-2009, 2018-2025 Philipp Wolfer
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2011-2012, 2014, 2016-2018 Wieland Hoffmann
 # Copyright (C) 2011-2014 Michael Wiencek
@@ -50,20 +50,15 @@ import tempfile
 
 from setuptools import (
     Command,
-    Extension,
     setup,
 )
+from setuptools.command.build import build
 from setuptools.command.install import install
-from setuptools.dist import Distribution
 
-
-try:
-    from setuptools.command.build import build
-except ImportError:
-    from distutils.command.build import build
 
 # required for PEP 517
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
 
 from picard import (  # noqa: E402
     PICARD_APP_ID,
@@ -71,22 +66,17 @@ from picard import (  # noqa: E402
     PICARD_DESKTOP_NAME,
     PICARD_DISPLAY_NAME,
     PICARD_VERSION,
-    PICARD_VERSION_STR_SHORT,
 )
 
 
-if sys.version_info < (3, 8):
-    sys.exit("ERROR: You need Python 3.8 or higher to use Picard.")
+if sys.version_info < (3, 10):
+    sys.exit("ERROR: You need Python 3.10 or higher to use Picard.")
 
 PACKAGE_NAME = "picard"
 APPDATA_FILE = PICARD_APP_ID + '.appdata.xml'
 APPDATA_FILE_TEMPLATE = APPDATA_FILE + '.in'
 DESKTOP_FILE = PICARD_APP_ID + '.desktop'
 DESKTOP_FILE_TEMPLATE = DESKTOP_FILE + '.in'
-
-ext_modules = [
-    Extension('picard.util._astrcmp', sources=['picard/util/_astrcmp.c']),
-]
 
 
 def newer(source, target):
@@ -102,163 +92,59 @@ def newer(source, target):
     return os.path.getmtime(source) > os.path.getmtime(target)
 
 
-class picard_test(Command):
-    description = "run automated tests"
-    user_options = [
-        ("tests=", None, "list of tests to run (default all)"),
-        ("verbosity=", "v", "verbosity"),
-    ]
-
-    def initialize_options(self):
-        self.tests = []
-        self.verbosity = 1
-
-    def finalize_options(self):
-        if self.tests:
-            self.tests = self.tests.split(",")
-        # In case the verbosity flag is used, verbosity is None
-        if not self.verbosity:
-            self.verbosity = 2
-        # Convert to appropriate verbosity if passed by --verbosity option
-        self.verbosity = int(self.verbosity)
-
-    def run(self):
-        import unittest
-
-        names = []
-        for filename in glob.glob("test/**/test_*.py", recursive=True):
-            modules = os.path.splitext(filename)[0].split(os.sep)
-            name = '.'.join(modules[1:])
-            if not self.tests or name in self.tests:
-                names.append('test.' + name)
-
-        tests = unittest.defaultTestLoader.loadTestsFromNames(names)
-        t = unittest.TextTestRunner(verbosity=self.verbosity)
-        testresult = t.run(tests)
-        if not testresult.wasSuccessful():
-            sys.exit("At least one test failed.")
-
-
 class picard_build_locales(Command):
     description = 'build locale files'
-    user_options = [
-        ('build-dir=', 'd', "directory to build to"),
-        ('inplace', 'i', "ignore build-lib and put compiled locales into the 'locale' directory"),
-    ]
 
     def initialize_options(self):
-        self.build_dir = None
-        self.inplace = 0
+        pass
 
     def finalize_options(self):
-        self.set_undefined_options('build', ('build_locales', 'build_dir'))
-        self.locales = self.distribution.locales
+        pass
 
     def run(self):
-        for domain, locale, po in self.locales:
-            if self.inplace:
-                path = os.path.join('locale', locale, 'LC_MESSAGES')
-            else:
-                path = os.path.join(self.build_dir, locale, 'LC_MESSAGES')
-            mo = os.path.join(path, '%s.mo' % domain)
+        # build_lib is only set when run as part of the "build" command.
+        # When "build_locales" is run standalone this will not be set and
+        # locales will be compiled in the local directory.
+        build_lib = self.distribution.get_command_obj('build').build_lib
+
+        for domain, locale, po in _picard_get_locale_files():
+            path = os.path.join('picard', 'locale', locale, 'LC_MESSAGES')
+            if build_lib:
+                path = os.path.join(build_lib, path)
+            mo = os.path.join(path, f'{domain}.mo')
             self.mkpath(path)
             self.spawn(['msgfmt', '-o', mo, po])
 
 
-Distribution.locales = None
-
-
-class picard_install_locales(Command):
-    description = "install locale files"
-    user_options = [
-        ('install-dir=', 'd', "directory to install locale files to"),
-        ('build-dir=', 'b', "build directory (where to install from)"),
-        ('force', 'f', "force installation (overwrite existing files)"),
-        ('skip-build', None, "skip the build steps"),
-    ]
-    boolean_options = ['force', 'skip-build']
-
-    def initialize_options(self):
-        self.install_dir = None
-        self.build_dir = None
-        self.force = 0
-        self.skip_build = None
-        self.outfiles = []
-
-    def finalize_options(self):
-        self.set_undefined_options('build', ('build_locales', 'build_dir'))
-        self.set_undefined_options('install',
-                                   ('install_locales', 'install_dir'),
-                                   ('force', 'force'),
-                                   ('skip_build', 'skip_build'),
-                                   )
-
-    def run(self):
-        if not self.skip_build:
-            self.run_command('build_locales')
-        self.outfiles = self.copy_tree(self.build_dir, self.install_dir)
-
-    def get_inputs(self):
-        return self.locales or []
-
-    def get_outputs(self):
-        return self.outfiles
-
-
 class picard_install(install):
-
     user_options = install.user_options + [
-        ('install-locales=', None,
-         "installation directory for locales"),
-        ('localedir=', None, ''),
         ('disable-autoupdate', None, 'disable update checking and hide settings for it'),
-        ('disable-locales', None, ''),
     ]
 
     sub_commands = install.sub_commands
 
     def initialize_options(self):
         install.initialize_options(self)
-        self.install_locales = None
-        self.localedir = None
         self.disable_autoupdate = None
-        self.disable_locales = None
 
     def finalize_options(self):
         install.finalize_options(self)
-        if self.install_locales is None:
-            self.install_locales = os.path.join(self.install_data, 'share', 'locale')
-            if self.root and self.install_locales.startswith(self.root):
-                self.install_locales = self.install_locales[len(self.root):]
-        self.install_locales = os.path.normpath(self.install_locales)
-        self.localedir = self.install_locales
-        # can't use set_undefined_options :/
-        self.distribution.get_command_obj('build').localedir = self.localedir
         self.distribution.get_command_obj('build').disable_autoupdate = self.disable_autoupdate
-        if self.root is not None:
-            self.change_roots('locales')
-        if self.disable_locales is None:
-            self.sub_commands.append(('install_locales', None))
 
     def run(self):
         install.run(self)
 
 
 class picard_build(build):
-
     user_options = build.user_options + [
-        ('build-locales=', 'd', "build directory for locale files"),
-        ('localedir=', None, ''),
         ('disable-autoupdate', None, 'disable update checking and hide settings for it'),
-        ('disable-locales', None, ''),
         ('build-number=', None, 'build number (integer)'),
+        ('disable-locales', None, ''),
     ]
 
     def initialize_options(self):
         super().initialize_options()
         self.build_number = 0
-        self.build_locales = None
-        self.localedir = None
         self.disable_autoupdate = None
         self.disable_locales = None
 
@@ -268,21 +154,21 @@ class picard_build(build):
             self.build_number = int(self.build_number)
         except ValueError:
             self.build_number = 0
-        if self.build_locales is None:
-            self.build_locales = os.path.join(self.build_base, 'locale')
-        if self.localedir is None:
-            self.localedir = '/usr/share/locale'
         if self.disable_autoupdate is None:
-            self.disable_autoupdate = False
-        if self.disable_locales is None:
+            # Support setting this option with an environment variable as
+            # a workaround for https://tickets.metabrainz.org/browse/PICARD-3003
+            env_autoupdate = os.environ.get('PICARD_DISABLE_AUTOUPDATE')
+            self.disable_autoupdate = bool(env_autoupdate and env_autoupdate != '0')
+        if not self.disable_locales:
             self.sub_commands.append(('build_locales', None))
 
     def run(self):
-        params = {'localedir': self.localedir, 'autoupdate': not self.disable_autoupdate}
+        params = {'autoupdate': not self.disable_autoupdate}
         generate_file('tagger.py.in', 'tagger.py', params)
         make_executable('tagger.py')
         generate_file('scripts/picard.in', 'scripts/' + PACKAGE_NAME, params)
         if sys.platform == 'win32':
+            common_args = self._metadata()
             file_version = PICARD_VERSION[0:3] + (self.build_number,)
             file_version_str = '.'.join(str(v) for v in file_version)
 
@@ -291,7 +177,11 @@ class picard_build(build):
                 'file-version': file_version_str,
             }
             if os.path.isfile('installer/picard-setup.nsi.in'):
-                generate_file('installer/picard-setup.nsi.in', 'installer/picard-setup.nsi', {**args, **installer_args})
+                generate_file(
+                    'installer/picard-setup.nsi.in',
+                    'installer/picard-setup.nsi',
+                    {**common_args, **installer_args},
+                )
                 log.info('generating NSIS translation files')
                 self.spawn(['python', 'installer/i18n/json2nsh.py'])
 
@@ -299,24 +189,48 @@ class picard_build(build):
                 'filevers': str(file_version),
                 'prodvers': str(file_version),
             }
-            generate_file('win-version-info.txt.in', 'win-version-info.txt', {**args, **version_args})
+            generate_file(
+                'win-version-info.txt.in',
+                'win-version-info.txt',
+                {**common_args, **version_args},
+            )
 
-            default_publisher = 'CN=Metabrainz Foundation Inc., O=Metabrainz Foundation Inc., L=San Luis Obispo, S=California, C=US'
+            default_publisher = (
+                'CN=MetaBrainz Foundation Inc., O=MetaBrainz Foundation Inc., L=Covina, S=California, C=US'
+            )
             # Combine patch version with build number. As Windows store apps require continuously
             # growing version numbers we combine the patch version with a build number set by the
             # build script.
-            store_version = (PICARD_VERSION.major, PICARD_VERSION.minor, PICARD_VERSION.patch * 1000 + min(self.build_number, 999), 0)
-            generate_file('appxmanifest.xml.in', 'appxmanifest.xml', {
-                'app-id': "MetaBrainzFoundationInc." + PICARD_APP_ID,
-                'display-name': PICARD_DISPLAY_NAME,
-                'short-name': PICARD_APP_NAME,
-                'publisher': os.environ.get('PICARD_APPX_PUBLISHER', default_publisher),
-                'version': '.'.join(str(v) for v in store_version),
-            })
+            store_version = (
+                PICARD_VERSION.major,
+                PICARD_VERSION.minor,
+                PICARD_VERSION.patch * 1000 + min(self.build_number, 999),
+                0,
+            )
+            generate_file(
+                'appxmanifest.xml.in',
+                'appxmanifest.xml',
+                {
+                    'app-id': "MetaBrainzFoundationInc." + PICARD_APP_ID,
+                    'display-name': PICARD_DISPLAY_NAME,
+                    'short-name': PICARD_APP_NAME,
+                    'publisher': os.environ.get('PICARD_APPX_PUBLISHER', default_publisher),
+                    'version': '.'.join(str(v) for v in store_version),
+                },
+            )
         elif sys.platform not in {'darwin', 'haiku1', 'win32'}:
             self.run_command('build_appdata')
             self.run_command('build_desktop_file')
         super().run()
+
+    def _metadata(self):
+        metadata = self.distribution.metadata
+        return {
+            'name': metadata.name,
+            'description': metadata.description,
+            'version': metadata.version,
+            'url': metadata.url,
+        }
 
 
 def py_from_ui(uifile):
@@ -324,7 +238,7 @@ def py_from_ui(uifile):
 
 
 def py_from_ui_with_defaultdir(uifile):
-    return os.path.join("picard", "ui", py_from_ui(uifile))
+    return os.path.join('picard', 'ui', 'forms', py_from_ui(uifile))
 
 
 def ui_files():
@@ -350,48 +264,68 @@ class picard_build_ui(Command):
                 if m:
                     name = m.group(1)
                 else:
-                    log.warn('ignoring %r (cannot extract base name)', f)
+                    log.warning('ignoring %r (cannot extract base name)', f)
                     continue
                 uiname = name + '.ui'
                 uifile = os.path.join(head, uiname)
                 if os.path.isfile(uifile):
-                    pyfile = os.path.join(os.path.dirname(uifile),
-                                          py_from_ui(uifile))
+                    pyfile = os.path.join(os.path.dirname(uifile), py_from_ui(uifile))
                     files.append((uifile, pyfile))
                 else:
                     uifile = os.path.join('ui', uiname)
                     if os.path.isfile(uifile):
-                        files.append((uifile,
-                                      py_from_ui_with_defaultdir(uifile)))
+                        files.append((uifile, py_from_ui_with_defaultdir(uifile)))
                     else:
-                        log.warn('ignoring %r', f)
+                        log.warning('ignoring %r', f)
             self.files = files
 
     def run(self):
-        from PyQt5 import uic
+        from PyQt6 import uic
+
         _translate_re = (
-            re.compile(
-                r'QtGui\.QApplication.translate\(.*?, (.*?), None, '
-                r'QtGui\.QApplication\.UnicodeUTF8\)'),
-            re.compile(
-                r'\b_translate\(.*?, (.*?)(?:, None)?\)')
+            (re.compile(r'(\s+_translate = QtCore\.QCoreApplication\.translate)'), r''),
+            (
+                re.compile(
+                    r'QtGui\.QApplication.translate\(.*?, (.*?), None, '
+                    r'QtGui\.QApplication\.UnicodeUTF8\)'
+                ),
+                r'_(\1)',
+            ),
+            (re.compile(r'\b_translate\(.*?, (.*?)(?:, None)?\)'), r'_(\1)'),
         )
 
         def compile_ui(uifile, pyfile):
-            log.info("compiling %s -> %s", uifile, pyfile)
             tmp = StringIO()
+            log.info("compiling %s -> %s", uifile, pyfile)
             uic.compileUi(uifile, tmp)
             source = tmp.getvalue()
-            rc = re.compile(r'\n\n#.*?(?=\n\n)', re.MULTILINE | re.DOTALL)
-            comment = ("\n\n# Automatically generated - don't edit.\n"
-                       "# Use `python setup.py %s` to update it."
-                       % _get_option_name(self))
-            for r in list(_translate_re):
-                source = r.sub(r'_(\1)', source)
-                source = rc.sub(comment, source)
-            f = open(pyfile, "w")
-            f.write(source)
-            f.close()
+
+            # replace QT translations stuff by ours
+            for matcher, replacement in _translate_re:
+                source = matcher.sub(replacement, source)
+
+            # replace headers
+            rc = re.compile(r'\n# WARNING.*?(?=\nclass )', re.MULTILINE | re.DOTALL)
+
+            command = _get_option_name(self)
+            new_header = f"""
+# Automatically generated - do not edit.
+# Use `python setup.py {command}` to update it.
+
+from PyQt6 import (
+    QtCore,
+    QtGui,
+    QtWidgets,
+)
+
+from picard.i18n import gettext as _
+
+"""
+            source = rc.sub(new_header, source)
+
+            # save to final file
+            with open(pyfile, "w") as f:
+                f.write(source)
 
         if self.files:
             for uifile, pyfile in self.files:
@@ -405,6 +339,7 @@ class picard_build_ui(Command):
             compile,
             makeqrc,
         )
+
         makeqrc.main()
         compile.main()
 
@@ -420,18 +355,18 @@ class picard_clean_ui(Command):
         pass
 
     def run(self):
-        for uifile, pyfile in ui_files():
+        for _uifile, pyfile in ui_files():
             try:
                 os.unlink(pyfile)
                 log.info("removing %s", pyfile)
             except OSError:
-                log.warn("'%s' does not exist -- can't clean it", pyfile)
+                log.warning("'%s' does not exist -- can't clean it", pyfile)
         pyfile = os.path.join("picard", "resources.py")
         try:
             os.unlink(pyfile)
             log.info("removing %s", pyfile)
         except OSError:
-            log.warn("'%s' does not exist -- can't clean it", pyfile)
+            log.warning("'%s' does not exist -- can't clean it", pyfile)
 
 
 class picard_build_appdata(Command):
@@ -448,12 +383,17 @@ class picard_build_appdata(Command):
 
     def run(self):
         with tempfile.NamedTemporaryFile(suffix=APPDATA_FILE) as tmp_file:
-            self.spawn([
-                'msgfmt', '--xml',
-                '--template=%s' % APPDATA_FILE_TEMPLATE,
-                '-d', 'po/appstream',
-                '-o', tmp_file.name,
-            ])
+            self.spawn(
+                [
+                    'msgfmt',
+                    '--xml',
+                    '--template=%s' % APPDATA_FILE_TEMPLATE,
+                    '-d',
+                    'po/appstream',
+                    '-o',
+                    tmp_file.name,
+                ]
+            )
             self.add_release_list(tmp_file.name)
 
     def add_release_list(self, source_file):
@@ -464,7 +404,7 @@ class picard_build_appdata(Command):
             args = {
                 'app-id': PICARD_APP_ID,
                 'desktop-id': PICARD_DESKTOP_NAME,
-                'releases': '\n    '.join(releases)
+                'releases': '\n    '.join(releases),
             }
             generate_file(source_file, APPDATA_FILE, args)
 
@@ -480,12 +420,17 @@ class picard_build_desktop_file(Command):
         pass
 
     def run(self):
-        self.spawn([
-            'msgfmt', '--desktop',
-            '--template=%s' % DESKTOP_FILE_TEMPLATE,
-            '-d', 'po/appstream',
-            '-o', DESKTOP_FILE,
-        ])
+        self.spawn(
+            [
+                'msgfmt',
+                '--desktop',
+                '--template=%s' % DESKTOP_FILE_TEMPLATE,
+                '-d',
+                'po/appstream',
+                '-o',
+                DESKTOP_FILE,
+            ]
+        )
 
 
 class picard_regen_appdata_pot_file(Command):
@@ -501,32 +446,45 @@ class picard_regen_appdata_pot_file(Command):
     def run(self):
         output_dir = 'po/appstream/'
         pot_file = os.path.join(output_dir, 'picard-appstream.pot')
-        self.spawn([
-            'xgettext',
-            '--output', pot_file,
-            '--language=appdata',
-            APPDATA_FILE_TEMPLATE,
-        ])
-        self.spawn([
-            'xgettext',
-            '--output', pot_file,
-            '--language=desktop',
-            '--join-existing',
-            DESKTOP_FILE_TEMPLATE,
-        ])
+        self.spawn(
+            [
+                'xgettext',
+                '--output',
+                pot_file,
+                '--language=appdata',
+                APPDATA_FILE_TEMPLATE,
+            ]
+        )
+        self.spawn(
+            [
+                'xgettext',
+                '--output',
+                pot_file,
+                '--language=desktop',
+                '--join-existing',
+                DESKTOP_FILE_TEMPLATE,
+            ]
+        )
         for filepath in glob.glob(os.path.join(output_dir, '*.po')):
-            self.spawn([
-                'msgmerge',
-                '--update',
-                filepath,
-                pot_file
-            ])
+            self.spawn(
+                [
+                    'msgmerge',
+                    '--update',
+                    filepath,
+                    pot_file,
+                ]
+            )
 
 
 _regen_pot_description = "Regenerate po/picard.pot, parsing source tree for new or updated strings"
-_regen_constants_pot_description = "Regenerate po/constants/constants.pot, parsing source tree for new or updated strings"
+_regen_constants_pot_description = (
+    "Regenerate po/constants/constants.pot, parsing source tree for new or updated strings"
+)
 try:
-    from babel.messages import frontend as babel
+    from babel.messages import (
+        frontend as babel,
+        pofile,
+    )
 
     class picard_regen_pot_file(babel.extract_messages):
         description = _regen_pot_description
@@ -545,7 +503,20 @@ try:
             self.output_file = 'po/constants/constants.pot'
             self.input_dirs = 'picard/const'
 
+    def _parse_pot_file(pot_file):
+        with open(pot_file, 'rb') as f:
+            log.info('Parsing %s' % pot_file)
+            po = pofile.read_po(f)
+            for message in po:
+                if not message.id or not isinstance(message.id, str):
+                    continue
+                yield message
+
 except ImportError:
+
+    def _exit_babel_required():
+        sys.exit("Babel is required to use this command (see po/README.md)")
+
     class picard_regen_pot_file(Command):
         description = _regen_pot_description
         user_options = []
@@ -557,10 +528,13 @@ except ImportError:
             pass
 
         def run(self):
-            sys.exit("Babel is required to use this command (see po/README.md)")
+            _exit_babel_required()
 
     class picard_regen_constants_pot_file(picard_regen_pot_file):
         description = _regen_constants_pot_description
+
+    def _parse_pot_file(pot_file):
+        _exit_babel_required()
 
 
 def _get_option_name(obj):
@@ -584,11 +558,9 @@ class picard_update_constants(Command):
         self.weblate_key = None
 
     def finalize_options(self):
-        self.locales = self.distribution.locales
+        pass
 
     def run(self):
-        from babel.messages import pofile
-
         if not self.skip_pull:
             cmd = [
                 os.path.join(os.path.dirname(__file__), 'scripts', 'tools', 'pull-shared-translations.py'),
@@ -601,20 +573,16 @@ class picard_update_constants(Command):
         countries = dict()
         countries_potfile = os.path.join('po', 'countries', 'countries.pot')
         isocode_comment = 'iso.code:'
-        with open(countries_potfile, 'rb') as f:
-            log.info('Parsing %s' % countries_potfile)
-            po = pofile.read_po(f)
-            for message in po:
-                if not message.id or not isinstance(message.id, str):
-                    continue
-                for comment in message.auto_comments:
-                    if comment.startswith(isocode_comment):
-                        code = comment.replace(isocode_comment, '')
-                        countries[code] = message.id
-            if countries:
-                self.countries_py_file(countries)
-            else:
-                sys.exit('Failed to extract any country code/name !')
+        for message in _parse_pot_file(countries_potfile):
+            for comment in message.auto_comments:
+                if comment.startswith(isocode_comment):
+                    code = comment.replace(isocode_comment, '')
+                    countries[code] = message.id
+
+        if countries:
+            self._generate_constants_file('countries.py', 'RELEASE_COUNTRIES', countries)
+        else:
+            sys.exit('Failed to extract any country code/name !')
 
         attributes = dict()
         attributes_potfile = os.path.join('po', 'attributes', 'attributes.pot')
@@ -625,57 +593,29 @@ class picard_update_constants(Command):
             'DB:release_group_secondary_type/name',
             'DB:release_status/name',
         )
-        with open(attributes_potfile, 'rb') as f:
-            log.info('Parsing %s' % attributes_potfile)
-            po = pofile.read_po(f)
-            for message in po:
-                if not message.id or not isinstance(message.id, str):
-                    continue
-                for loc, pos in message.locations:
-                    if loc in extract_attributes:
-                        attributes["%s:%03d" % (loc, pos)] = message.id
-            if attributes:
-                self.attributes_py_file(attributes)
-            else:
-                sys.exit('Failed to extract any attribute !')
+        for message in _parse_pot_file(attributes_potfile):
+            for loc, pos in message.locations:
+                if loc in extract_attributes:
+                    attributes["%s:%03d" % (loc, pos)] = message.id
 
-    def countries_py_file(self, countries):
-        header = ("# -*- coding: utf-8 -*-\n"
-                  "# Automatically generated - don't edit.\n"
-                  "# Use `python setup.py {option}` to update it.\n"
-                  "\n"
-                  "RELEASE_COUNTRIES = {{\n")
-        line = "    '{code}': '{name}',\n"
-        footer = "}}\n"
-        filename = os.path.join('picard', 'const', 'countries.py')
-        with open(filename, 'w', encoding='utf-8') as countries_py:
-            def write(s, **kwargs):
-                countries_py.write(s.format(**kwargs))
+        if attributes:
+            self._generate_constants_file('attributes.py', 'MB_ATTRIBUTES', attributes)
+        else:
+            sys.exit('Failed to extract any attribute !')
 
-            write(header, option=_get_option_name(self))
-            for code, name in sorted(countries.items(), key=lambda t: t[0]):
-                write(line, code=code, name=name.replace("'", "\\'"))
-            write(footer)
-            log.info("%s was rewritten (%d countries)", filename, len(countries))
+    def _generate_constants_file(self, filename, varname, constants):
+        infilename = os.path.join('scripts', 'package', 'constants.py.in')
+        outfilename = os.path.join('picard', 'const', filename)
 
-    def attributes_py_file(self, attributes):
-        header = ("# -*- coding: utf-8 -*-\n"
-                  "# Automatically generated - don't edit.\n"
-                  "# Use `python setup.py {option}` to update it.\n"
-                  "\n"
-                  "MB_ATTRIBUTES = {{\n")
-        line = "    '{key}': '{value}',\n"
-        footer = "}}\n"
-        filename = os.path.join('picard', 'const', 'attributes.py')
-        with open(filename, 'w', encoding='utf-8') as attributes_py:
-            def write(s, **kwargs):
-                attributes_py.write(s.format(**kwargs))
+        def escape_str(s):
+            return s.replace("'", "\\'")
 
-            write(header, option=_get_option_name(self))
-            for key, value in sorted(attributes.items(), key=lambda i: i[0]):
-                write(line, key=key, value=value.replace("'", "\\'"))
-            write(footer)
-            log.info("%s was rewritten (%d attributes)", filename, len(attributes))
+        lines = [
+            "    '%s': '%s'," % (escape_str(key), escape_str(value))
+            for key, value in sorted(constants.items(), key=lambda i: i[0])
+        ]
+        generate_file(infilename, outfilename, {"varname": varname, "lines": "\n".join(lines)})
+        log.info("%s was rewritten (%d constants)", filename, len(constants))
 
 
 class picard_patch_version(Command):
@@ -697,20 +637,11 @@ class picard_patch_version(Command):
         regex = re.compile(r'^PICARD_BUILD_VERSION_STR\s*=.*$', re.MULTILINE)
         with open(filename, 'r+b') as f:
             source = (f.read()).decode()
-            build = self.platform + '.' + datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S')
+            build = self.platform + '.' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S')
             patched_source = regex.sub('PICARD_BUILD_VERSION_STR = "%s"' % build, source).encode()
             f.seek(0)
             f.write(patched_source)
             f.truncate()
-
-
-def cflags_to_include_dirs(cflags):
-    cflags = cflags.split()
-    include_dirs = []
-    for cflag in cflags:
-        if cflag.startswith('-I'):
-            include_dirs.append(cflag[2:])
-    return include_dirs
 
 
 def _picard_get_locale_files():
@@ -729,53 +660,9 @@ def _picard_get_locale_files():
     return locales
 
 
-def _explode_path(path):
-    """Return a list of components of the path (ie. "/a/b" -> ["a", "b"])"""
-    components = []
-    while True:
-        (path, tail) = os.path.split(path)
-        if tail == "":
-            components.reverse()
-            return components
-        components.append(tail)
-
-
-def _picard_packages():
-    """Build a tuple containing each module under picard/"""
-    packages = []
-    for subdir, dirs, files in os.walk("picard"):
-        packages.append(".".join(_explode_path(subdir)))
-    return tuple(sorted(packages))
-
-
-this_directory = os.path.abspath(os.path.dirname(__file__))
-
-
-def _get_description():
-    with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
-        return f.read()
-
-
-def _get_requirements():
-    with open(os.path.join(this_directory, 'requirements.txt'), encoding='utf-8') as f:
-        return f.readlines()
-
-
 args = {
-    'name': PACKAGE_NAME,
-    'version': PICARD_VERSION_STR_SHORT,
-    'description': 'The next generation MusicBrainz tagger',
-    'keywords': 'MusicBrainz metadata tagger picard',
-    'long_description': _get_description(),
-    'long_description_content_type': 'text/markdown',
-    'url': 'https://picard.musicbrainz.org/',
-    'package_dir': {'picard': 'picard'},
-    'packages': _picard_packages(),
-    'locales': _picard_get_locale_files(),
-    'ext_modules': ext_modules,
     'data_files': [],
     'cmdclass': {
-        'test': picard_test,
         'build': picard_build,
         'build_locales': picard_build_locales,
         'build_ui': picard_build_ui,
@@ -784,37 +671,12 @@ args = {
         'regen_appdata_pot_file': picard_regen_appdata_pot_file,
         'build_desktop_file': picard_build_desktop_file,
         'install': picard_install,
-        'install_locales': picard_install_locales,
         'update_constants': picard_update_constants,
         'regen_pot_file': picard_regen_pot_file,
         'regen_constants_pot_file': picard_regen_constants_pot_file,
         'patch_version': picard_patch_version,
     },
     'scripts': ['scripts/' + PACKAGE_NAME],
-    'install_requires': _get_requirements(),
-    'python_requires': '~=3.8',
-    'classifiers': [
-        'License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)',
-        'Development Status :: 5 - Production/Stable',
-        'Environment :: MacOS X',
-        'Environment :: Win32 (MS Windows)',
-        'Environment :: X11 Applications :: Qt',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',
-        'Programming Language :: Python :: 3.12',
-        'Programming Language :: Python :: 3.13',
-        'Programming Language :: Python :: 3.14',
-        'Operating System :: MacOS',
-        'Operating System :: Microsoft :: Windows',
-        'Operating System :: POSIX :: Linux',
-        'Topic :: Multimedia :: Sound/Audio',
-        'Topic :: Multimedia :: Sound/Audio :: Analysis',
-        'Intended Audience :: End Users/Desktop',
-    ]
 }
 
 
@@ -829,28 +691,21 @@ def make_executable(filename):
     os.chmod(filename, os.stat(filename).st_mode | stat.S_IEXEC)
 
 
-def find_file_in_path(filename):
-    for include_path in sys.path:
-        file_path = os.path.join(include_path, filename)
-        if os.path.exists(file_path):
-            return file_path
-
-
 if sys.platform not in {'darwin', 'haiku1', 'win32'}:
     args['data_files'].append(('share/applications', [PICARD_DESKTOP_NAME]))
     args['data_files'].append(('share/icons/hicolor/scalable/apps', ['resources/%s.svg' % PICARD_APP_ID]))
     for size in (16, 24, 32, 48, 128, 256):
-        args['data_files'].append((
-            'share/icons/hicolor/{size}x{size}/apps'.format(size=size),
-            ['resources/images/{size}x{size}/{app_id}.png'.format(size=size, app_id=PICARD_APP_ID)]
-        ))
+        args['data_files'].append(
+            (
+                'share/icons/hicolor/{size}x{size}/apps'.format(size=size),
+                ['resources/images/{size}x{size}/{app_id}.png'.format(size=size, app_id=PICARD_APP_ID)],
+            )
+        )
     args['data_files'].append(('share/metainfo', [APPDATA_FILE]))
 
 if sys.platform == 'win32':
     args['entry_points'] = {
-        'gui_scripts': [
-            'picard = picard.tagger:main'
-        ]
+        'gui_scripts': ['picard = picard.tagger:main'],
     }
 
 setup(**args)

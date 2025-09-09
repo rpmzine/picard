@@ -2,8 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2018-2020 Philipp Wolfer
-# Copyright (C) 2019-2021 Laurent Monin
+# Copyright (C) 2018-2020, 2022 Philipp Wolfer
+# Copyright (C) 2019-2022, 2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -26,9 +26,9 @@ from test.picardtestcase import PicardTestCase
 
 from picard import config
 from picard.const.sys import IS_WIN
+from picard.extension_points.script_functions import register_script_function
 from picard.file import File
 from picard.metadata import Metadata
-from picard.script import register_script_function
 from picard.util.scripttofilename import (
     script_to_filename,
     script_to_filename_with_metadata,
@@ -53,7 +53,6 @@ register_script_function(lambda p: '1' if p.file else '', 'has_file')
 
 
 class ScriptToFilenameTest(PicardTestCase):
-
     def setUp(self):
         super().setUp()
         self.set_config_values(settings)
@@ -88,8 +87,7 @@ class ScriptToFilenameTest(PicardTestCase):
         metadata = Metadata()
         metadata['artist'] = 'Foo'
         metadata['~extension'] = 'foo'
-        (filename, new_metadata) = script_to_filename_with_metadata(
-            '$set(_extension,bar)\n%artist%', metadata)
+        (filename, new_metadata) = script_to_filename_with_metadata('$set(_extension,bar)\n%artist%', metadata)
         self.assertEqual('Foo', filename)
         self.assertEqual('foo', metadata['~extension'])
         self.assertEqual('bar', new_metadata['~extension'])

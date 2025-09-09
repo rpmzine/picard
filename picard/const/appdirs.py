@@ -2,8 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2021-2022 Laurent Monin
 # Copyright (C) 2021-2022 Philipp Wolfer
+# Copyright (C) 2021-2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +23,7 @@
 import os
 import os.path
 
-from PyQt5.QtCore import (
+from PyQt6.QtCore import (
     QCoreApplication,
     QStandardPaths,
 )
@@ -40,11 +40,19 @@ QCoreApplication.setOrganizationName(PICARD_ORG_NAME)
 
 
 def config_folder():
-    return os.path.normpath(os.environ.get('PICARD_CONFIG_DIR', QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)))
+    return os.path.normpath(
+        os.environ.get(
+            'PICARD_CONFIG_DIR', QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppConfigLocation)
+        )
+    )
 
 
 def cache_folder():
-    return os.path.normpath(os.environ.get('PICARD_CACHE_DIR', QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)))
+    return os.path.normpath(
+        os.environ.get(
+            'PICARD_CACHE_DIR', QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation)
+        )
+    )
 
 
 def plugin_folder():

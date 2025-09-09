@@ -3,8 +3,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2020-2021 Philipp Wolfer
 # Copyright (C) 2020-2021, 2023 Laurent Monin
+# Copyright (C) 2020-2022 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -50,6 +50,7 @@ ALIASES = {
     'Ray': 'Ray Bouchard',
     'RaysDev': 'Ray Bouchard',
     'Sophist': 'Sophist-UK',
+    'twodoorcoupe': 'Giorgio Fontanive',
     'vishal choudhary': 'Vishal Choudhary',
     'vishichoudhary': 'Vishal Choudhary',
     'yvanzo': 'Yvan Rivière',
@@ -58,7 +59,7 @@ ALIASES = {
 
 # https://stackoverflow.com/a/4629241
 def ranges(i):
-    for a, b in itertools.groupby(enumerate(i), lambda pair: pair[1] - pair[0]):
+    for _a, b in itertools.groupby(enumerate(i), lambda pair: pair[1] - pair[0]):
         b = list(b)
         yield b[0][1], b[-1][1]
 
@@ -117,7 +118,7 @@ def parse_copyright_text(text):
                 if m:
                     year1 = int(m.group(1))
                     year2 = int(m.group(2))
-                    for y in range(min(year1, year2), max(year1, year2)+1):
+                    for y in range(min(year1, year2), max(year1, year2) + 1):
                         all_years.append(y)
                 else:
                     all_years.append(int(years))
@@ -139,14 +140,17 @@ def parse_file(path, encoding='utf-8'):
     authors_from_file = {}
 
     fix_header_pattern = re.compile(r'^(?:#|/\*|//)\s+(fix-header:)\s*(.*)$', re.IGNORECASE)
-    skip_pattern = re.compile(r'^(?:#|/\*|//)\s+(Automatically\s+generated|Created\s+by:\s+The\s+Resource\s+Compiler\s+for\s+PyQt5)', re.IGNORECASE)
+    skip_pattern = re.compile(
+        r'^(?:#|/\*|//)\s+(Automatically\s+generated|Created\s+by:\s+The\s+Resource\s+Compiler\s+for\s+PyQt6)',
+        re.IGNORECASE,
+    )
     with open(path, encoding=encoding) as f:
         lines = f.readlines()
         found = defaultdict(lambda: None)
         if lines and lines[0].startswith('#!'):
             found["shebang"] = lines[0].rstrip()
             del lines[0]
-        for num, line in enumerate(lines):
+        for line in lines:
             skip_matched = skip_pattern.search(line)
             if skip_matched:
                 found['skip'] = skip_matched.group(1)
@@ -190,7 +194,7 @@ def parse_file(path, encoding='utf-8'):
             while True:
                 if i == 0:
                     break
-                if lines[i-1] in EMPTY_LINE:
+                if lines[i - 1] in EMPTY_LINE:
                     i -= 1
                 else:
                     break
@@ -205,14 +209,14 @@ def parse_file(path, encoding='utf-8'):
             while True:
                 if i == len(lines) - 1:
                     break
-                if lines[i+1] in EMPTY_LINE:
+                if lines[i + 1] in EMPTY_LINE:
                     i += 1
                 else:
                     break
             end = i
             authors_from_file = parse_copyright_text("".join(lines[start:end]))
             before = lines[:start]
-            after = lines[end+1:]
+            after = lines[end + 1 :]
         else:
             before = []
             after = lines
@@ -276,22 +280,27 @@ def fix_header(path, encoding='utf-8'):
     after = after.strip()
     has_content = bool(before + after)
 
-    parts = list(filter(None, [
-        found["shebang"],
-        CODING_TEXT.strip(),
-        LICENSE_TOP.strip() if not found['nolicense'] else None,
-        new_copyright.strip() if not found['nolicense'] else None,
-        (LICENSE_BOTTOM.strip() + ("\n\n" if has_content else "")) if not found['nolicense'] else None,
-        before.strip(),
-        after.strip(),
-    ]))
+    parts = list(
+        filter(
+            None,
+            [
+                found["shebang"],
+                CODING_TEXT.strip(),
+                LICENSE_TOP.strip() if not found['nolicense'] else None,
+                new_copyright.strip() if not found['nolicense'] else None,
+                (LICENSE_BOTTOM.strip() + ("\n\n" if has_content else "")) if not found['nolicense'] else None,
+                before.strip(),
+                after.strip(),
+            ],
+        )
+    )
     return "\n".join(parts), None
 
 
 def main():
     parser = argparse.ArgumentParser(
         description='Generate source file header with copyrights & license from existing header and git log',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument('path', nargs='+', help='Path of a file or a folder of files')
     parser.add_argument('-e', '--extension', default='.py', help='File extension to filter by')
@@ -330,7 +339,6 @@ def main():
 
 
 if __name__ == '__main__':
-
     logging.debug("Starting...")
 
     main()

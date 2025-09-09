@@ -4,13 +4,13 @@
 #
 # Copyright (C) 2006-2008, 2011 Lukáš Lalinský
 # Copyright (C) 2008-2009 Nikolai Prokoschenko
-# Copyright (C) 2009-2010, 2014-2015, 2018-2022 Philipp Wolfer
+# Copyright (C) 2009-2010, 2014-2015, 2018-2022, 2024-2025 Philipp Wolfer
 # Copyright (C) 2011-2013 Michael Wiencek
 # Copyright (C) 2011-2013 Wieland Hoffmann
 # Copyright (C) 2013 Calvin Walton
 # Copyright (C) 2013 Ionuț Ciocîrlan
 # Copyright (C) 2013-2014 Sophist-UK
-# Copyright (C) 2013-2015, 2018-2022 Laurent Monin
+# Copyright (C) 2013-2015, 2018-2024 Laurent Monin
 # Copyright (C) 2015 Alex Berman
 # Copyright (C) 2015 Ohm Patel
 # Copyright (C) 2016 Suhas
@@ -35,40 +35,35 @@
 
 import os.path
 
-from PyQt5 import QtWidgets
-from PyQt5.QtCore import QStandardPaths
-from PyQt5.QtGui import QPalette
+from PyQt6.QtGui import QPalette
 
-from picard.config import (
-    BoolOption,
-    TextOption,
-    get_config,
+from picard.config import get_config
+from picard.extension_points.options_pages import register_options_page
+from picard.i18n import (
+    N_,
+    gettext as _,
 )
 from picard.script import ScriptParser
 
+from picard.ui.forms.ui_options_renaming import Ui_RenamingOptionsPage
 from picard.ui.options import (
     OptionsCheckError,
     OptionsPage,
-    register_options_page,
 )
 from picard.ui.options.scripting import (
     ScriptCheckError,
     ScriptingDocumentationDialog,
 )
-from picard.ui.scripteditor import (
-    ScriptEditorDialog,
-    ScriptEditorExamples,
+from picard.ui.scripteditor import ScriptEditorDialog
+from picard.ui.scripteditor.examples import ScriptEditorExamples
+from picard.ui.scripteditor.utils import (
     populate_script_selection_combo_box,
     synchronize_vertical_scrollbars,
 )
-from picard.ui.ui_options_renaming import Ui_RenamingOptionsPage
-
-
-_default_music_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.MusicLocation)
+from picard.ui.util import FileDialog
 
 
 class RenamingOptionsPage(OptionsPage):
-
     NAME = 'filerenaming'
     TITLE = N_("File Naming")
     PARENT = None
@@ -76,17 +71,18 @@ class RenamingOptionsPage(OptionsPage):
     ACTIVE = True
     HELP_URL = "/config/options_filerenaming.html"
 
-    options = [
-        BoolOption('setting', 'rename_files', False),
-        BoolOption('setting', 'move_files', False),
-        TextOption('setting', 'move_files_to', _default_music_dir),
-        BoolOption('setting', 'move_additional_files', False),
-        TextOption('setting', 'move_additional_files_pattern', "*.jpg *.png"),
-        BoolOption('setting', 'delete_empty_dirs', True),
-    ]
+    OPTIONS = (
+        ('move_files', ['move_files']),
+        ('move_files_to', ['move_files_to']),
+        ('move_additional_files', ['move_additional_files']),
+        ('move_additional_files_pattern', ['move_additional_files_pattern']),
+        ('delete_empty_dirs', ['delete_empty_dirs']),
+        ('rename_files', ['rename_files']),
+        ('selected_file_naming_script_id', ['naming_script_selector']),
+    )
 
     def __init__(self, parent=None):
-        super().__init__(parent)
+        super().__init__(parent=parent)
         self.script_text = ""
         self.compat_options = {}
         self.ui = Ui_RenamingOptionsPage()
@@ -128,22 +124,27 @@ class RenamingOptionsPage(OptionsPage):
         self.current_row = -1
 
     def update_selector_from_editor(self):
-        """Update the script selector combo box from the script editor page.
-        """
+        """Update the script selector combo box from the script editor page."""
         self.naming_scripts = self.script_editor_dialog.naming_scripts
         self.selected_naming_script_id = self.script_editor_dialog.selected_script_id
-        populate_script_selection_combo_box(self.naming_scripts, self.selected_naming_script_id, self.ui.naming_script_selector)
+        populate_script_selection_combo_box(
+            self.naming_scripts,
+            self.selected_naming_script_id,
+            self.ui.naming_script_selector,
+        )
         self.display_examples()
 
     def update_selector_from_settings(self):
-        """Update the script selector combo box from the settings.
-        """
-        populate_script_selection_combo_box(self.naming_scripts, self.selected_naming_script_id, self.ui.naming_script_selector)
+        """Update the script selector combo box from the settings."""
+        populate_script_selection_combo_box(
+            self.naming_scripts,
+            self.selected_naming_script_id,
+            self.ui.naming_script_selector,
+        )
         self.update_selector_in_editor()
 
     def update_selector_in_editor(self):
-        """Update the selection in the script editor page to match local selection.
-        """
+        """Update the selection in the script editor page to match local selection."""
         idx = self.ui.naming_script_selector.currentIndex()
         if self.script_editor_dialog:
             self.script_editor_dialog.set_selected_script_index(idx)
@@ -155,14 +156,20 @@ class RenamingOptionsPage(OptionsPage):
             self.update_examples_from_local()
 
     def match_after_to_before(self):
-        """Sets the selected item in the 'after' list to the corresponding item in the 'before' list.
-        """
-        self.examples.synchronize_selected_example_lines(self.current_row, self.ui.example_filename_before, self.ui.example_filename_after)
+        """Sets the selected item in the 'after' list to the corresponding item in the 'before' list."""
+        self.examples.synchronize_selected_example_lines(
+            self.current_row,
+            self.ui.example_filename_before,
+            self.ui.example_filename_after,
+        )
 
     def match_before_to_after(self):
-        """Sets the selected item in the 'before' list to the corresponding item in the 'after' list.
-        """
-        self.examples.synchronize_selected_example_lines(self.current_row, self.ui.example_filename_after, self.ui.example_filename_before)
+        """Sets the selected item in the 'before' list to the corresponding item in the 'after' list."""
+        self.examples.synchronize_selected_example_lines(
+            self.current_row,
+            self.ui.example_filename_after,
+            self.ui.example_filename_before,
+        )
 
     def show_script_editing_page(self):
         self.script_editor_dialog = ScriptEditorDialog.show_instance(parent=self, examples=self.examples)
@@ -260,7 +267,7 @@ class RenamingOptionsPage(OptionsPage):
         try:
             parser.eval(self.script_text)
         except Exception as e:
-            raise ScriptCheckError("", str(e))
+            raise ScriptCheckError("", str(e)) from None
         if self.ui.rename_files.isChecked():
             if not self.script_text.strip():
                 raise ScriptCheckError("", _("The file naming format must not be empty."))
@@ -274,9 +281,6 @@ class RenamingOptionsPage(OptionsPage):
         config.setting['move_additional_files_pattern'] = self.ui.move_additional_files_pattern.text()
         config.setting['delete_empty_dirs'] = self.ui.delete_empty_dirs.isChecked()
         config.setting['selected_file_naming_script_id'] = self.selected_naming_script_id
-        self.tagger.window.enable_renaming_action.setChecked(config.setting['rename_files'])
-        self.tagger.window.enable_moving_action.setChecked(config.setting['move_files'])
-        self.tagger.window.make_script_selector_menu()
 
     def display_error(self, error):
         # Ignore scripting errors, those are handled inline
@@ -284,7 +288,10 @@ class RenamingOptionsPage(OptionsPage):
             super().display_error(error)
 
     def move_files_to_browse(self):
-        path = QtWidgets.QFileDialog.getExistingDirectory(self, "", self.ui.move_files_to.text())
+        path = FileDialog.getExistingDirectory(
+            parent=self,
+            dir=self.ui.move_files_to.text(),
+        )
         if path:
             path = os.path.normpath(path)
             self.ui.move_files_to.setText(path)

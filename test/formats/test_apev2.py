@@ -2,9 +2,10 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2019, 2021 Philipp Wolfer
-# Copyright (C) 2020-2021 Laurent Monin
+# Copyright (C) 2019, 2021-2022, 2024 Philipp Wolfer
+# Copyright (C) 2020-2022 Laurent Monin
 # Copyright (C) 2021 Bob Swift
+# Copyright (C) 2024 Suryansh Shakya
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -38,7 +39,6 @@ from picard.formats import (
     apev2,
     open_,
 )
-from picard.formats.mutagenext.tak import native_tak
 from picard.metadata import Metadata
 
 from .common import (
@@ -78,7 +78,6 @@ SUPPORTED_TAGS = set(TAGS) - apev2.UNSUPPORTED_TAGS
 
 
 class CommonApeTests:
-
     class ApeTestCase(CommonTests.TagFormatsTestCase):
         def setup_tags(self):
             super().setup_tags()
@@ -95,7 +94,7 @@ class CommonApeTests:
         @skipUnlessTestfile
         def test_invalid_coverart(self):
             metadata = {
-                'Cover Art (Front)': APEValue(b'filename.png\0NOTPNGDATA', BINARY)
+                'Cover Art (Front)': APEValue(b'filename.png\0NOTPNGDATA', BINARY),
             }
             save_raw(self.filename, metadata)
             loaded_metadata = load_metadata(self.filename)
@@ -104,12 +103,15 @@ class CommonApeTests:
         @skipUnlessTestfile
         def test_clear_tags_preserve_images_all(self):
             imagedata = APEValue(b'filename.png\0' + create_fake_png(b'a'), BINARY)
-            save_raw(self.filename, {
-                'Cover Art (Front)': imagedata,
-                'Cover Art': imagedata,
-                'Cover Art (foo)': imagedata,
-                'cover art (bar)': imagedata,
-            })
+            save_raw(
+                self.filename,
+                {
+                    'Cover Art (Front)': imagedata,
+                    'Cover Art': imagedata,
+                    'Cover Art (foo)': imagedata,
+                    'cover art (bar)': imagedata,
+                },
+            )
             config.setting['clear_existing_tags'] = True
             config.setting['preserve_images'] = True
             metadata = save_and_load_metadata(self.filename, Metadata())
@@ -144,17 +146,13 @@ class CommonApeTests:
                 save_metadata(self.filename, loaded_metadata)
                 raw_metadata = dict(load_raw(self.filename))
                 self.assertIn(name, raw_metadata)
-                self.assertEqual(
-                    raw_metadata[name],
-                    loaded_metadata[name.lower()])
+                self.assertEqual(raw_metadata[name], loaded_metadata[name.lower()])
                 self.assertEqual(1, len(raw_metadata[name]))
                 self.assertNotIn(name.upper(), raw_metadata)
 
         def _read_case_insensitive_tag(self, name, ape_name):
             upper_ape_name = ape_name.upper()
-            metadata = {
-                upper_ape_name: 'Some value'
-            }
+            metadata = {upper_ape_name: 'Some value'}
             save_raw(self.filename, metadata)
             loaded_metadata = load_metadata(self.filename)
             self.assertEqual(metadata[upper_ape_name], loaded_metadata[name])
@@ -172,6 +170,7 @@ class MonkeysAudioTest(CommonApeTests.ApeTestCase):
         '~channels': '2',
         '~sample_rate': '44100',
         '~bits_per_sample': '16',
+        '~filesize': '2432',
     }
     unexpected_info = ['~video']
 
@@ -183,6 +182,7 @@ class WavPackTest(CommonApeTests.ApeTestCase):
         'length': 82,
         '~channels': '2',
         '~sample_rate': '44100',
+        '~filesize': '2478',
     }
     unexpected_info = ['~video']
 
@@ -247,6 +247,7 @@ class MusepackSV7Test(CommonApeTests.ApeTestCase):
         'length': 91,
         '~channels': '2',
         '~sample_rate': '44100',
+        '~filesize': '1605',
     }
     unexpected_info = ['~video']
 
@@ -258,6 +259,7 @@ class MusepackSV8Test(CommonApeTests.ApeTestCase):
         'length': 82,
         '~channels': '2',
         '~sample_rate': '44100',
+        '~filesize': '1569',
     }
     unexpected_info = ['~video']
 
@@ -269,13 +271,13 @@ class TAKTest(CommonApeTests.ApeTestCase):
 
     def setUp(self):
         super().setUp()
-        if native_tak:
-            self.expected_info = {
-                'length': 82,
-                '~channels': '2',
-                '~sample_rate': '44100',
-                '~bits_per_sample': '16'
-            }
+        self.expected_info = {
+            'length': 82,
+            '~channels': '2',
+            '~sample_rate': '44100',
+            '~bits_per_sample': '16',
+            '~filesize': '2080',
+        }
 
 
 class OptimFROGLosslessTest(CommonApeTests.ApeTestCase):
@@ -285,6 +287,7 @@ class OptimFROGLosslessTest(CommonApeTests.ApeTestCase):
         'length': 0,
         '~channels': '2',
         '~sample_rate': '48000',
+        '~filesize': '117',
     }
     unexpected_info = ['~video']
 
@@ -300,6 +303,7 @@ class OptimFROGDUalStreamTest(CommonApeTests.ApeTestCase):
         'length': 0,
         '~channels': '2',
         '~sample_rate': '48000',
+        '~filesize': '117',
     }
     unexpected_info = ['~video']
 

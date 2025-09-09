@@ -4,9 +4,9 @@
 #
 # Copyright (C) 2022 Bob Swift
 # Copyright (C) 2022 Kamil
-# Copyright (C) 2022 Laurent Monin
 # Copyright (C) 2022 skelly37
 # Copyright (C) 2022-2023 Philipp Wolfer
+# Copyright (C) 2022-2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -54,6 +54,10 @@ if IS_WIN:
     from pywintypes import error as WinApiError  # type: ignore
     import win32file  # type: ignore
     import win32pipe  # type: ignore
+else:
+    WinApiError = None
+    win32file = None
+    win32pipe = None
 
 
 class PipeError(Exception):
@@ -63,7 +67,7 @@ class PipeError(Exception):
         if self.MESSAGE:
             self.messages: Tuple[str] = (self.MESSAGE,) + tuple(messages)
         else:
-            self.messages: Tuple[str] = tuple(messages)     # type: ignore
+            self.messages: Tuple[str] = tuple(messages)  # type: ignore
 
     def __str__(self) -> str:
         messages_str = "\n  ".join(str(m) for m in self.messages)
@@ -120,8 +124,14 @@ class AbstractPipe(metaclass=ABCMeta):
         """
         raise NotImplementedError
 
-    def __init__(self, app_name: str, app_version: str, args: Optional[Iterable[str]] = None,
-                 forced_path: Optional[str] = None, identifier: Optional[str] = None):
+    def __init__(
+        self,
+        app_name: str,
+        app_version: str,
+        args: Optional[Iterable[str]] = None,
+        forced_path: Optional[str] = None,
+        identifier: Optional[str] = None,
+    ):
         """
         :param app_name: (str) Name of the app, included in the pipe name
         :param app_version: (str) Version of the app, included in the pipe name
@@ -130,10 +140,10 @@ class AbstractPipe(metaclass=ABCMeta):
         :param forced_path: (Optional[str]) Testing-purposes only, bypass of no $HOME on testing machines
         """
         if args is None:
-            self._args: Tuple[str] = tuple()    # type: ignore
+            self._args: Tuple[str] = tuple()  # type: ignore
         else:
             try:
-                self._args = tuple(args)    # type: ignore
+                self._args = tuple(args)  # type: ignore
             except TypeError as exc:
                 raise PipeErrorInvalidArgs(exc) from None
 
@@ -194,8 +204,12 @@ class AbstractPipe(metaclass=ABCMeta):
 
         for directory in self.PIPE_DIRS:
             if directory:
-                _pipe_names.append(os.path.join(os.path.expanduser(directory),
-                                                sanitize_filename(f"{app_name}_v{app_version}_{self._identifier}_pipe_file")))
+                _pipe_names.append(
+                    os.path.join(
+                        os.path.expanduser(directory),
+                        sanitize_filename(f"{app_name}_v{app_version}_{self._identifier}_pipe_file"),
+                    )
+                )
 
         if _pipe_names:
             return _pipe_names
@@ -279,21 +293,23 @@ class AbstractPipe(metaclass=ABCMeta):
         log.debug("Stopping pipe")
         self.pipe_running = False
         self.send_to_pipe(self.MESSAGE_TO_IGNORE)
-        try:
-            self.__thread_pool.shutdown(wait=True, cancel_futures=True)
-        except TypeError:  # cancel_futures is not supported on Python < 3.9
-            self.__thread_pool.shutdown(wait=True)
+        self.__thread_pool.shutdown(wait=True, cancel_futures=True)
 
 
 class UnixPipe(AbstractPipe):
-
     PIPE_DIRS: Tuple[str] = (
         os.getenv('XDG_RUNTIME_DIR'),
         "~/.config/MusicBrainz/Picard/pipes/",
-    )   # type: ignore
+    )  # type: ignore
 
-    def __init__(self, app_name: str, app_version: str, args: Optional[Iterable[str]] = None,
-                 forced_path: Optional[str] = None, identifier: Optional[str] = None):
+    def __init__(
+        self,
+        app_name: str,
+        app_version: str,
+        args: Optional[Iterable[str]] = None,
+        forced_path: Optional[str] = None,
+        identifier: Optional[str] = None,
+    ):
         super().__init__(app_name, app_version, args, forced_path, identifier)
 
         if not self.path:
@@ -384,8 +400,14 @@ class WinPipe(AbstractPipe):
 
     PIPE_DIRS: Tuple[str] = ("\\\\.\\pipe\\",)
 
-    def __init__(self, app_name: str, app_version: str, args: Optional[Iterable[str]] = None,
-                 forced_path: Optional[str] = None, identifier: Optional[str] = None):
+    def __init__(
+        self,
+        app_name: str,
+        app_version: str,
+        args: Optional[Iterable[str]] = None,
+        forced_path: Optional[str] = None,
+        identifier: Optional[str] = None,
+    ):
         # type checking is already enforced in the AbstractPipe
         try:
             app_version = app_version.replace(".", "-")
@@ -405,7 +427,8 @@ class WinPipe(AbstractPipe):
                 self.__BUFFER_SIZE,
                 self.__BUFFER_SIZE,
                 self.__DEFAULT_TIMEOUT,
-                None)
+                None,
+            )
             self.is_pipe_owner = True
         except WinApiError:
             self.__pipe = None
@@ -429,7 +452,7 @@ class WinPipe(AbstractPipe):
                 None,
                 win32file.OPEN_EXISTING,
                 self.__FLAGS_AND_ATTRIBUTES,
-                None
+                None,
             )
         except WinApiError as err:
             # File did not exist, no existing pipe to write to

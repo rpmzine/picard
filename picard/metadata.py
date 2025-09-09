@@ -8,7 +8,7 @@
 # Copyright (C) 2012 Chad Wilson
 # Copyright (C) 2012 Johannes Weißl
 # Copyright (C) 2012-2014, 2018, 2020 Wieland Hoffmann
-# Copyright (C) 2013-2014, 2016, 2018-2022 Laurent Monin
+# Copyright (C) 2013-2014, 2016, 2018-2024 Laurent Monin
 # Copyright (C) 2013-2014, 2017 Sophist-UK
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016-2017 Sambhav Kothari
@@ -20,6 +20,7 @@
 # Copyright (C) 2021 Petit Minion
 # Copyright (C) 2022 Bob Swift
 # Copyright (C) 2022 skelly37
+# Copyright (C) 2024 x11x
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -43,25 +44,22 @@ from collections.abc import (
 )
 from functools import partial
 
-from PyQt5.QtCore import QObject
+from PyQt6 import QtCore
 
 from picard.config import get_config
 from picard.mbjson import (
     artist_credit_from_node,
     get_score,
 )
-from picard.plugin import (
-    PluginFunctions,
-    PluginPriority,
-)
+from picard.plugin import PluginFunctions
 from picard.similarity import similarity2
+from picard.tags import preserved_tag_names
 from picard.util import (
     ReadWriteLockContext,
     extract_year_from_date,
     linear_combination_of_weights,
 )
 from picard.util.imagelist import ImageList
-from picard.util.tags import PRESERVED_TAGS
 
 
 MULTI_VALUED_JOINER = '; '
@@ -82,8 +80,7 @@ SimMatchTrack = namedtuple('SimMatchTrack', 'similarity releasegroup release tra
 SimMatchRelease = namedtuple('SimMatchRelease', 'similarity release')
 
 
-def weights_from_release_type_scores(parts, release, release_type_scores,
-                                     weight_release_type=1):
+def weights_from_release_type_scores(parts, release, release_type_scores, weight_release_type=1):
     # This function generates a score that determines how likely this release will be selected in a lookup.
     # The score goes from 0 to 1 with 1 being the most likely to be chosen and 0 the least likely
     # This score is based on the preferences of release-types found in this release
@@ -117,9 +114,7 @@ def weights_from_release_type_scores(parts, release, release_type_scores,
         parts.append((score, weight_release_type))
 
 
-def weights_from_preferred_countries(parts, release,
-                                     preferred_countries,
-                                     weight):
+def weights_from_preferred_countries(parts, release, preferred_countries, weight):
     total_countries = len(preferred_countries)
     if total_countries:
         score = 0.0
@@ -155,7 +150,6 @@ def trackcount_score(actual, expected):
 
 
 class Metadata(MutableMapping):
-
     """List of metadata items with dict-like access."""
 
     __weights = [
@@ -174,13 +168,14 @@ class Metadata(MutableMapping):
         'close_year': 0.85,
         'exists_vs_null': 0.65,
         'no_release_date': 0.25,
-        'differed': 0.0
+        'differed': 0.0,
     }
 
     multi_valued_joiner = MULTI_VALUED_JOINER
 
     def __init__(self, *args, deleted_tags=None, images=None, length=None, **kwargs):
         self._lock = ReadWriteLockContext()
+        self._length = None
         self._store = dict()
         self.deleted_tags = set()
         self.length = 0
@@ -196,7 +191,7 @@ class Metadata(MutableMapping):
             for tag in deleted_tags:
                 del self[tag]
         if length is not None:
-            self.length = int(length)
+            self.length = length
 
     def __bool__(self):
         return bool(len(self))
@@ -204,12 +199,22 @@ class Metadata(MutableMapping):
     def __len__(self):
         return len(self._store) + len(self.images)
 
+    @property
+    def length(self):
+        return self._length
+
+    @length.setter
+    def length(self, value):
+        length = int(value)
+        if length < 0:
+            raise ValueError("negative value: %d" % length)
+        self._length = length
+
     @staticmethod
     def length_score(a, b):
         if a is None or b is None:
             return 0.0
-        return (1.0 - min(abs(a - b),
-                LENGTH_SCORE_THRES_MS) / float(LENGTH_SCORE_THRES_MS))
+        return 1.0 - min(abs(a - b), LENGTH_SCORE_THRES_MS) / float(LENGTH_SCORE_THRES_MS)
 
     def compare(self, other, ignored=None):
         parts = []
@@ -238,8 +243,7 @@ class Metadata(MutableMapping):
                     else:
                         score = similarity2(a, b)
                     parts.append((score, weight))
-                elif (a and name in other.deleted_tags
-                     or b and name in self.deleted_tags):
+                elif a and name in other.deleted_tags or b and name in self.deleted_tags:
                     parts.append((0, weight))
 
         return linear_combination_of_weights(parts)
@@ -331,22 +335,32 @@ class Metadata(MutableMapping):
 
         config = get_config()
         if 'releasecountry' in weights:
-            weights_from_preferred_countries(parts, release,
-                                             config.setting['preferred_release_countries'],
-                                             weights['releasecountry'])
+            weights_from_preferred_countries(
+                parts,
+                release,
+                config.setting['preferred_release_countries'],
+                weights['releasecountry'],
+            )
 
         if 'format' in weights:
-            weights_from_preferred_formats(parts, release,
-                                           config.setting['preferred_release_formats'],
-                                           weights['format'])
+            weights_from_preferred_formats(
+                parts,
+                release,
+                config.setting['preferred_release_formats'],
+                weights['format'],
+            )
 
         if 'releasetype' in weights:
-            weights_from_release_type_scores(parts, release,
-                                             config.setting['release_type_scores'],
-                                             weights['releasetype'])
+            weights_from_release_type_scores(
+                parts,
+                release,
+                config.setting['release_type_scores'],
+                weights['releasetype'],
+            )
 
         if 'release-group' in release:
-            rg = QObject.tagger.get_release_group_by_id(release['release-group']['id'])
+            tagger = QtCore.QCoreApplication.instance()
+            rg = tagger.get_release_group_by_id(release['release-group']['id'])
             if release['id'] in rg.loaded_albums:
                 parts.append((1.0, 6))
 
@@ -562,8 +576,9 @@ class Metadata(MutableMapping):
 
     def apply_func(self, func):
         with self._lock.lock_for_write():
+            default_preserved_tags = set(preserved_tag_names())
             for name, values in list(self.rawitems()):
-                if name not in PRESERVED_TAGS:
+                if name not in default_preserved_tags:
                     self._set(name, (func(value) for value in values))
 
     def strip_whitespace(self):
@@ -580,10 +595,76 @@ class Metadata(MutableMapping):
         self.apply_func(str.strip)
 
     def __repr__(self):
-        return "%s(%r, deleted_tags=%r, length=%r, images=%r)" % (self.__class__.__name__, self._store, self.deleted_tags, self.length, self.images)
+        return "%s(%r, deleted_tags=%r, length=%r, images=%r)" % (
+            self.__class__.__name__,
+            self._store,
+            self.deleted_tags,
+            self.length,
+            self.images,
+        )
 
     def __str__(self):
-        return ("store: %r\ndeleted: %r\nimages: %r\nlength: %r" % (self._store, self.deleted_tags, [str(img) for img in self.images], self.length))
+        return "store: %r\ndeleted: %r\nimages: %r\nlength: %r" % (
+            self._store,
+            self.deleted_tags,
+            [str(img) for img in self.images],
+            self.length,
+        )
+
+    def add_images(self, added_images):
+        if not added_images:
+            return False
+
+        current_images = set(self.images)
+        if added_images.isdisjoint(current_images):
+            self.images = ImageList(current_images.union(added_images))
+            self.has_common_images = False
+            return True
+
+        return False
+
+    def remove_images(self, sources, removed_images):
+        """Removes `removed_images` from `images`, but only if they are not included in `sources`.
+
+        Args:
+            sources: List of source `Metadata` objects
+            removed_images: Set of `CoverArt` to removed
+
+        Returns:
+            True if self.images was modified, False else
+        """
+        if not self.images or not removed_images:
+            return False
+
+        if not sources:
+            self.images = ImageList()
+            self.has_common_images = True
+            return True
+
+        current_images = set(self.images)
+
+        if self.has_common_images and current_images == removed_images:
+            return False
+
+        common_images = True  # True, if all children share the same images
+        previous_images = None
+
+        # Iterate over all sources and check whether the images proposed to be
+        # removed are used in any sources. Images used in existing sources
+        # must not be removed.
+        for source_metadata in sources:
+            source_images = set(source_metadata.images)
+            if previous_images and common_images and previous_images != source_images:
+                common_images = False
+            previous_images = set(source_metadata.images)  # Remember for next iteration
+            removed_images = removed_images.difference(source_images)
+            if not removed_images and not common_images:
+                return False  # No images left to remove, abort immediately
+
+        new_images = current_images.difference(removed_images)
+        self.images = ImageList(new_images)
+        self.has_common_images = common_images
+        return True
 
 
 class MultiMetadataProxy:
@@ -598,6 +679,7 @@ class MultiMetadataProxy:
     metadata to use file specific metadata, without making it actually part
     of the track.
     """
+
     WRITE_METHODS = [
         'add_unique',
         'add',
@@ -670,28 +752,25 @@ class MultiMetadataProxy:
 
 
 def _get_total_release_weight(weights):
-    release_weights = ('album', 'totaltracks', 'totalalbumtracks', 'releasetype',
-                       'releasecountry', 'format', 'date')
+    release_weights = (
+        'album',
+        'totaltracks',
+        'totalalbumtracks',
+        'releasetype',
+        'releasecountry',
+        'format',
+        'date',
+    )
     return sum(weights[w] for w in release_weights if w in weights)
 
 
-_album_metadata_processors = PluginFunctions(label='album_metadata_processors')
-_track_metadata_processors = PluginFunctions(label='track_metadata_processors')
-
-
-def register_album_metadata_processor(function, priority=PluginPriority.NORMAL):
-    """Registers new album-level metadata processor."""
-    _album_metadata_processors.register(function.__module__, function, priority)
-
-
-def register_track_metadata_processor(function, priority=PluginPriority.NORMAL):
-    """Registers new track-level metadata processor."""
-    _track_metadata_processors.register(function.__module__, function, priority)
+album_metadata_processors = PluginFunctions(label='album_metadata_processors')
+track_metadata_processors = PluginFunctions(label='track_metadata_processors')
 
 
 def run_album_metadata_processors(album_object, metadata, release):
-    _album_metadata_processors.run(album_object, metadata, release)
+    album_metadata_processors.run(album_object, metadata, release)
 
 
 def run_track_metadata_processors(album_object, metadata, track, release=None):
-    _track_metadata_processors.run(album_object, metadata, track, release)
+    track_metadata_processors.run(album_object, metadata, track, release)

@@ -28,7 +28,7 @@
 Asynchronous web service utilities.
 """
 
-from PyQt5.QtCore import QUrl
+from PyQt6.QtCore import QUrl
 
 
 def port_from_qurl(qurl):
@@ -55,8 +55,7 @@ def host_port_to_url(host, port, path=None, scheme=None, as_string=False):
             scheme = 'http'
     url.setScheme(scheme)
 
-    if ((scheme == 'https' and port != 443)
-            or (scheme == 'http' and port != 80)):
+    if (scheme == 'https' and port != 443) or (scheme == 'http' and port != 80):
         url.setPort(port)
 
     url.setHost(host)

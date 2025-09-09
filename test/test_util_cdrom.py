@@ -3,6 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2021 Philipp Wolfer
+# Copyright (C) 2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -25,6 +26,7 @@ import unittest
 
 from test.picardtestcase import PicardTestCase
 
+from picard.const.defaults import DEFAULT_DRIVES
 from picard.const.sys import IS_WIN
 from picard.util import cdrom
 
@@ -79,7 +81,6 @@ Can write RAM:
 
 
 class LinuxParseCdromInfoTest(PicardTestCase):
-
     def test_drives(self):
         with io.StringIO(MOCK_CDROM_INFO) as f:
             drives = list(cdrom._parse_linux_cdrom_info(f))
@@ -97,14 +98,13 @@ class LinuxParseCdromInfoTest(PicardTestCase):
 
 
 class GetCdromDrivesTest(PicardTestCase):
-
     def test_get_cdrom_drives(self):
         self.set_config_values({"cd_lookup_device": "/dev/cdrom"})
         # Independent of the implementation get_cdrom_drives must not rais
         # and return an Iterable.
         drives = cdrom.get_cdrom_drives()
         self.assertIsInstance(drives, Iterable)
-        self.assertTrue(set(cdrom.DEFAULT_DRIVES).issubset(drives))
+        self.assertTrue(set(DEFAULT_DRIVES).issubset(drives))
 
     def test_generic_iter_drives(self):
         self.set_config_values({"cd_lookup_device": "/dev/cdrom"})
@@ -119,7 +119,6 @@ class GetCdromDrivesTest(PicardTestCase):
 
 @unittest.skipUnless(IS_WIN, "windows test")
 class WindowsGetCdromDrivesTest(PicardTestCase):
-
     def test_autodetect(self):
         self.assertTrue(cdrom.AUTO_DETECT_DRIVES)
 

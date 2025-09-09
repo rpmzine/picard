@@ -2,7 +2,7 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2013-2015, 2020-2021 Laurent Monin
+# Copyright (C) 2013-2015, 2020-2021, 2023-2024 Laurent Monin
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2018 Wieland Hoffmann
 # Copyright (C) 2019-2021 Philipp Wolfer
@@ -25,6 +25,11 @@
 from enum import IntEnum
 
 from picard.const import MB_ATTRIBUTES
+from picard.i18n import (
+    N_,
+    gettext as _,
+    pgettext_attributes,
+)
 
 
 # list of types from http://musicbrainz.org/doc/Cover_Art/Types
@@ -101,3 +106,10 @@ def image_type_as_id3_num(texttype):
 
 def types_from_id3(id3type):
     return [image_type_from_id3_num(id3type)]
+
+
+TYPES_SEPARATOR = ", "
+
+
+def translated_types_as_string(types, separator=TYPES_SEPARATOR):
+    return separator.join(translate_caa_type(t) for t in types)

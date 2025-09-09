@@ -2,9 +2,10 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
+# Copyright (C) 2022 Jeffrey Bosboom
 # Copyright (C) 2022 Laurent Monin
 # Copyright (C) 2022, 2024 Philipp Wolfer
-# Copyright (C) 2022 Jeffrey Bosboom
+# Copyright (C) 2024 ShubhamBhut
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -59,7 +60,6 @@ test_entries = [
 
 
 class TestFilterTocEntries(PicardTestCase):
-
     def test_filter_toc_entries(self):
         result = filter_toc_entries(iter(test_log))
         self.assertTrue(isinstance(result, Iterator))
@@ -68,7 +68,6 @@ class TestFilterTocEntries(PicardTestCase):
 
 
 class TestTocFromFile(PicardTestCase):
-
     def _test_toc_from_file(self, logfile):
         test_log = get_test_data_path(logfile)
         toc = toc_from_file(test_log)
@@ -100,7 +99,27 @@ class TestTocFromFile(PicardTestCase):
     def test_toc_from_file_with_datatrack_freac(self):
         test_log = get_test_data_path('freac-datatrack.log')
         toc = toc_from_file(test_log)
-        self.assertEqual((1, 13, 218150, 150, 15014, 33313, 49023, 65602, 81316, 102381, 116294, 133820, 151293, 168952, 190187, 203916), toc)
+        self.assertEqual(
+            (
+                1,
+                13,
+                218150,
+                150,
+                15014,
+                33313,
+                49023,
+                65602,
+                81316,
+                102381,
+                116294,
+                133820,
+                151293,
+                168952,
+                190187,
+                203916,
+            ),
+            toc,
+        )
 
     def test_toc_from_empty_file(self):
         test_log = get_test_data_path('eac-empty.log')

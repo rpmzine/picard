@@ -3,13 +3,14 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2017 Sambhav Kothari
-# Copyright (C) 2017, 2019-2022 Laurent Monin
+# Copyright (C) 2017, 2019-2024 Laurent Monin
 # Copyright (C) 2018 Wieland Hoffmann
-# Copyright (C) 2018-2023 Philipp Wolfer
+# Copyright (C) 2018-2023, 2025 Philipp Wolfer
 # Copyright (C) 2020 dukeyin
 # Copyright (C) 2021, 2025 Bob Swift
 # Copyright (C) 2021 Vladislav Karbovskii
-# Copyright (C) 2023 David Kellner
+# Copyright (C) 2023, 2025 David Kellner
+# Copyright (C) 2024 Rakim Middya
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -68,6 +69,7 @@ settings = {
     "translate_artist_names": True,
     "translate_artist_names_script_exception": False,
     "standardize_instruments": True,
+    "standardize_vocals": True,
     "release_ars": True,
     "preferred_release_countries": [],
     "artist_locales": ['en'],
@@ -104,7 +106,6 @@ class MBJSONTest(PicardTestCase):
 
 
 class ReleaseTest(MBJSONTest):
-
     filename = 'release.json'
 
     def test_release(self):
@@ -136,13 +137,28 @@ class ReleaseTest(MBJSONTest):
         self.assertEqual(m['~release_seriesid'], '7421b602-a413-4151-bcf4-d831debc3f27')
         self.assertEqual(m['~release_seriescomment'], 'Pink Floyed special editions')
         self.assertEqual(m['~release_seriesnumber'], '')
-        self.assertEqual(a.genres, {
-            'genre1': 6, 'genre2': 3,
-            'tag1': 6, 'tag2': 3})
+        self.assertEqual(
+            a._genres,
+            {
+                'genre1': 6,
+                'genre2': 3,
+            },
+        )
+        self.assertEqual(
+            a._folksonomy_tags,
+            {
+                'tag1': 6,
+                'tag2': 3,
+            },
+        )
         for artist in a._album_artists:
-            self.assertEqual(artist.genres, {
-                'british': 2,
-                'progressive rock': 10})
+            self.assertEqual(
+                artist._folksonomy_tags,
+                {
+                    'british': 2,
+                    'progressive rock': 10,
+                },
+            )
 
     def test_release_without_release_relationships(self):
         config.setting['release_ars'] = False
@@ -167,13 +183,28 @@ class ReleaseTest(MBJSONTest):
         self.assertEqual(m['~albumartists_sort'], 'Pink Floyd')
         self.assertEqual(m['~releaselanguage'], 'eng')
         self.assertEqual(m.getall('~releasecountries'), ['GB', 'NZ'])
-        self.assertEqual(a.genres, {
-            'genre1': 6, 'genre2': 3,
-            'tag1': 6, 'tag2': 3})
+        self.assertEqual(
+            a.genres,
+            {
+                'genre1': 6,
+                'genre2': 3,
+            },
+        )
+        self.assertEqual(
+            a.folksonomy_tags,
+            {
+                'tag1': 6,
+                'tag2': 3,
+            },
+        )
         for artist in a._album_artists:
-            self.assertEqual(artist.genres, {
-                'british': 2,
-                'progressive rock': 10})
+            self.assertEqual(
+                artist.folksonomy_tags,
+                {
+                    'british': 2,
+                    'progressive rock': 10,
+                },
+            )
 
     def test_preferred_release_country(self):
         m = Metadata()
@@ -194,17 +225,21 @@ class ReleaseTest(MBJSONTest):
     def test_release_group_rels(self):
         m = Metadata()
         release_group_to_metadata(self.json_doc['release-group'], m)
-        self.assertEqual(m.getall('~releasegroup_series'), [
-            "Absolute Radio's The 100 Collection",
-            '1001 Albums You Must Hear Before You Die'
-        ])
-        self.assertEqual(m.getall('~releasegroup_seriesid'), [
-            '4bf41050-6fa9-41a6-8398-15bdab4b0352',
-            '4bc2a338-e1d8-4546-8a61-640da8aaf888'
-        ])
-        self.assertEqual(m.getall('~releasegroup_seriescomment'), [
-            '2005 edition'
-        ])
+        self.assertEqual(
+            m.getall('~releasegroup_series'),
+            [
+                "Absolute Radio's The 100 Collection",
+                '1001 Albums You Must Hear Before You Die',
+            ],
+        )
+        self.assertEqual(
+            m.getall('~releasegroup_seriesid'),
+            [
+                '4bf41050-6fa9-41a6-8398-15bdab4b0352',
+                '4bc2a338-e1d8-4546-8a61-640da8aaf888',
+            ],
+        )
+        self.assertEqual(m.getall('~releasegroup_seriescomment'), ['2005 edition'])
         self.assertEqual(m.getall('~releasegroup_seriesnumber'), ['15', '291'])
 
     def test_release_group_rels_double(self):
@@ -213,17 +248,21 @@ class ReleaseTest(MBJSONTest):
 
         # load it twice and check for duplicates
         release_group_to_metadata(self.json_doc['release-group'], m)
-        self.assertEqual(m.getall('~releasegroup_series'), [
-            "Absolute Radio's The 100 Collection",
-            '1001 Albums You Must Hear Before You Die'
-        ])
-        self.assertEqual(m.getall('~releasegroup_seriesid'), [
-            '4bf41050-6fa9-41a6-8398-15bdab4b0352',
-            '4bc2a338-e1d8-4546-8a61-640da8aaf888'
-        ])
-        self.assertEqual(m.getall('~releasegroup_seriescomment'), [
-            '2005 edition'
-        ])
+        self.assertEqual(
+            m.getall('~releasegroup_series'),
+            [
+                "Absolute Radio's The 100 Collection",
+                '1001 Albums You Must Hear Before You Die',
+            ],
+        )
+        self.assertEqual(
+            m.getall('~releasegroup_seriesid'),
+            [
+                '4bf41050-6fa9-41a6-8398-15bdab4b0352',
+                '4bc2a338-e1d8-4546-8a61-640da8aaf888',
+            ],
+        )
+        self.assertEqual(m.getall('~releasegroup_seriescomment'), ['2005 edition'])
         self.assertEqual(m.getall('~releasegroup_seriesnumber'), ['15', '291'])
 
     def test_release_group_rels_removed(self):
@@ -238,18 +277,23 @@ class ReleaseTest(MBJSONTest):
                 del self.json_doc['release-group']['relations'][i]
                 break
         release_group_to_metadata(self.json_doc['release-group'], m)
-        self.assertEqual(m.getall('~releasegroup_series'), [
-            "Absolute Radio's The 100 Collection",
-        ])
-        self.assertEqual(m.getall('~releasegroup_seriesid'), [
-            '4bf41050-6fa9-41a6-8398-15bdab4b0352',
-        ])
+        self.assertEqual(
+            m.getall('~releasegroup_series'),
+            [
+                "Absolute Radio's The 100 Collection",
+            ],
+        )
+        self.assertEqual(
+            m.getall('~releasegroup_seriesid'),
+            [
+                '4bf41050-6fa9-41a6-8398-15bdab4b0352',
+            ],
+        )
         self.assertEqual(m.getall('~releasegroup_seriescomment'), [])
         self.assertEqual(m.getall('~releasegroup_seriesnumber'), ['15'])
 
 
 class NullReleaseTest(MBJSONTest):
-
     filename = 'release_null.json'
 
     def test_release(self):
@@ -264,7 +308,6 @@ class NullReleaseTest(MBJSONTest):
 
 
 class RecordingTest(MBJSONTest):
-
     filename = 'recording.json'
 
     def test_recording(self):
@@ -295,26 +338,29 @@ class RecordingTest(MBJSONTest):
         self.assertEqual(m['~artists_countries'], 'GB')
         self.assertNotIn('originaldate', m)
         self.assertNotIn('originalyear', m)
-        self.assertEqual(t.genres, {
-            'blue-eyed soul': 1,
-            'pop': 3})
+        self.assertEqual(t.folksonomy_tags, {'blue-eyed soul': 1, 'pop': 3})
         for artist in t._track_artists:
-            self.assertEqual(artist.genres, {
-                'dance-pop': 1,
-                'guitarist': 0})
+            self.assertEqual(artist.folksonomy_tags, {'dance-pop': 1, 'guitarist': 0})
 
     def test_recording_instrument_credits(self):
         m = Metadata()
         t = Track('1')
         config.setting['standardize_instruments'] = False
         recording_to_metadata(self.json_doc, m, t)
-        self.assertEqual(m['performer:vocals'], 'Ed Sheeran')
+        self.assertEqual(m['performer:lead vocals'], 'Ed Sheeran')
         self.assertEqual(m['performer:acoustic guitar'], 'Ed Sheeran')
+
+    def test_recording_vocal_credits(self):
+        m = Metadata()
+        t = Track('1')
+        config.setting['standardize_vocals'] = False
+        recording_to_metadata(self.json_doc, m, t)
+        self.assertEqual(m['performer:vocals'], 'Ed Sheeran')
+        self.assertEqual(m['performer:guitar family'], 'Ed Sheeran')
 
 
 class RecordingMultiArtistsTest1(MBJSONTest):
-    """Test multiple artists with some common contries.
-    """
+    """Test multiple artists with some common contries."""
 
     filename = 'recording_multi_artists_1.json'
 
@@ -326,8 +372,7 @@ class RecordingMultiArtistsTest1(MBJSONTest):
 
 
 class RecordingMultiArtistsTest2(MBJSONTest):
-    """Test multiple artists with one unknown (missing) country.
-    """
+    """Test multiple artists with one unknown (missing) country."""
 
     filename = 'recording_multi_artists_2.json'
 
@@ -339,7 +384,6 @@ class RecordingMultiArtistsTest2(MBJSONTest):
 
 
 class RecordingComposerCreditsTest(MBJSONTest):
-
     filename = 'recording_composer.json'
 
     def test_standardize_artists(self):
@@ -370,7 +414,6 @@ class RecordingComposerCreditsTest(MBJSONTest):
 
 
 class RecordingInstrumentalTest(MBJSONTest):
-
     filename = 'recording_instrumental.json'
 
     def test_recording(self):
@@ -383,7 +426,6 @@ class RecordingInstrumentalTest(MBJSONTest):
 
 
 class MultiWorkRecordingTest(MBJSONTest):
-
     filename = 'recording_multiple_works.json'
 
     def test_recording(self):
@@ -397,7 +439,6 @@ class MultiWorkRecordingTest(MBJSONTest):
 
 
 class RecordingVideoTest(MBJSONTest):
-
     filename = 'recording_video.json'
 
     def test_recording(self):
@@ -410,7 +451,6 @@ class RecordingVideoTest(MBJSONTest):
 
 
 class NullRecordingTest(MBJSONTest):
-
     filename = 'recording_null.json'
 
     def test_recording(self):
@@ -421,7 +461,6 @@ class NullRecordingTest(MBJSONTest):
 
 
 class RecordingCreditsTest(MBJSONTest):
-
     filename = 'recording_credits.json'
 
     def test_recording_solo_vocals(self):
@@ -448,7 +487,6 @@ class RecordingCreditsTest(MBJSONTest):
 
 
 class TrackTest(MBJSONTest):
-
     filename = 'track.json'
 
     def test_track(self):
@@ -466,7 +504,6 @@ class TrackTest(MBJSONTest):
 
 
 class PregapTrackTest(MBJSONTest):
-
     filename = 'track_pregap.json'
 
     def test_track(self):
@@ -479,7 +516,6 @@ class PregapTrackTest(MBJSONTest):
 
 
 class NullTrackTest(MBJSONTest):
-
     filename = 'track_null.json'
 
     def test_track(self):
@@ -490,7 +526,6 @@ class NullTrackTest(MBJSONTest):
 
 
 class MediaTest(MBJSONTest):
-
     filename = 'release_5medias.json'
 
     def test_media_formats_from_node_multi(self):
@@ -515,7 +550,6 @@ class MediaTest(MBJSONTest):
 
 
 class MediaPregapTest(MBJSONTest):
-
     filename = 'media_pregap.json'
 
     def test_track(self):
@@ -527,7 +561,6 @@ class MediaPregapTest(MBJSONTest):
 
 
 class NullMediaTest(MBJSONTest):
-
     filename = 'media_null.json'
 
     def test_track(self):
@@ -537,7 +570,6 @@ class NullMediaTest(MBJSONTest):
 
 
 class NullArtistTest(MBJSONTest):
-
     filename = 'artist_null.json'
 
     def test_artist(self):
@@ -547,7 +579,6 @@ class NullArtistTest(MBJSONTest):
 
 
 class ArtistEndedTest(MBJSONTest):
-
     filename = 'artist_ended.json'
 
     def test_artist_ended(self):
@@ -565,7 +596,6 @@ class ArtistEndedTest(MBJSONTest):
 
 
 class ArtistTranslationTest(MBJSONTest):
-
     filename = 'artist.json'
 
     def test_locale_specific_match_first(self):
@@ -651,7 +681,6 @@ class ArtistTranslationTest(MBJSONTest):
 
 
 class ArtistTranslationArabicExceptionsTest(MBJSONTest):
-
     filename = 'artist_arabic.json'
 
     def test_locale_specific_match_first_exc1(self):
@@ -690,8 +719,8 @@ class ArtistTranslationArabicExceptionsTest(MBJSONTest):
 
 
 class TestAliasesLocales(PicardTestCase):
-
     def setUp(self):
+        super().setUp()
         self.maxDiff = None
 
         self.aliases = [
@@ -719,7 +748,10 @@ class TestAliasesLocales(PicardTestCase):
         ]
 
     def test_1(self):
-        expect_full = {'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed')), 'en_CA': (0.8, ('Ed Sheeran (en_CA)', 'Sheeran, Ed'))}
+        expect_full = {
+            'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed')),
+            'en_CA': (0.8, ('Ed Sheeran (en_CA)', 'Sheeran, Ed')),
+        }
         expect_root = {'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed'))}
 
         full_locales, root_locales = _locales_from_aliases(self.aliases)
@@ -729,7 +761,10 @@ class TestAliasesLocales(PicardTestCase):
     def test_2(self):
         self.aliases[2]['type-id'] = ALIAS_TYPE_LEGAL_NAME_ID
 
-        expect_full = {'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed')), 'en_CA': (0.65, ('Ed Sheeran (en_CA)', 'Sheeran, Ed'))}
+        expect_full = {
+            'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed')),
+            'en_CA': (0.65, ('Ed Sheeran (en_CA)', 'Sheeran, Ed')),
+        }
         expect_root = {'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed'))}
 
         full_locales, root_locales = _locales_from_aliases(self.aliases)
@@ -740,7 +775,10 @@ class TestAliasesLocales(PicardTestCase):
         self.aliases[0]['primary'] = True
         del self.aliases[0]['locale']
 
-        expect_full = {'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed')), 'en_CA': (0.8, ('Ed Sheeran (en_CA)', 'Sheeran, Ed'))}
+        expect_full = {
+            'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed')),
+            'en_CA': (0.8, ('Ed Sheeran (en_CA)', 'Sheeran, Ed')),
+        }
         expect_root = {'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed'))}
 
         full_locales, root_locales = _locales_from_aliases(self.aliases)
@@ -750,7 +788,10 @@ class TestAliasesLocales(PicardTestCase):
     def test_4(self):
         self.aliases[2]['type-id'] = ALIAS_TYPE_SEARCH_HINT_ID
 
-        expect_full = {'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed')), 'en_CA': (0.4, ('Ed Sheeran (en_CA)', 'Sheeran, Ed'))}
+        expect_full = {
+            'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed')),
+            'en_CA': (0.4, ('Ed Sheeran (en_CA)', 'Sheeran, Ed')),
+        }
         expect_root = {'en': (0.8, ('Ed Sheeran (en)', 'Sheeran, Ed'))}
 
         full_locales, root_locales = _locales_from_aliases(self.aliases)
@@ -761,7 +802,10 @@ class TestAliasesLocales(PicardTestCase):
         self.aliases[1]['locale'] = 'en_US'
         self.aliases[1]['name'] = 'Ed Sheeran (en_US)'
 
-        expect_full = {'en_US': (0.8, ('Ed Sheeran (en_US)', 'Sheeran, Ed')), 'en_CA': (0.8, ('Ed Sheeran (en_CA)', 'Sheeran, Ed'))}
+        expect_full = {
+            'en_US': (0.8, ('Ed Sheeran (en_US)', 'Sheeran, Ed')),
+            'en_CA': (0.8, ('Ed Sheeran (en_CA)', 'Sheeran, Ed')),
+        }
         expect_root = {'en': (0.6, ('Ed Sheeran (en_US)', 'Sheeran, Ed'))}
 
         full_locales, root_locales = _locales_from_aliases(self.aliases)
@@ -784,7 +828,6 @@ class TestAliasesLocales(PicardTestCase):
 
 
 class ReleaseGroupTest(MBJSONTest):
-
     filename = 'release_group.json'
 
     def test_release_group(self):
@@ -798,11 +841,10 @@ class ReleaseGroupTest(MBJSONTest):
         self.assertEqual(m['releasetype'], 'album')
         self.assertEqual(m['~primaryreleasetype'], 'album')
         self.assertEqual(m['~releasegroup'], 'The Dark Side of the Moon')
-        self.assertEqual(r.genres, {'test2': 3, 'test': 6})
+        self.assertEqual(r.folksonomy_tags, {'test2': 3, 'test': 6})
 
 
 class NullReleaseGroupTest(MBJSONTest):
-
     filename = 'release_group_null.json'
 
     def test_release_group(self):
@@ -813,7 +855,6 @@ class NullReleaseGroupTest(MBJSONTest):
 
 
 class CountriesFromNodeTest(MBJSONTest):
-
     filename = 'country.json'
 
     def test_countries_from_node(self):
@@ -832,7 +873,6 @@ class CountriesFromNodeTest(MBJSONTest):
 
 
 class CountriesFromNodeNullTest(MBJSONTest):
-
     filename = 'country_null.json'
 
     def test_countries_from_node(self):
@@ -841,7 +881,6 @@ class CountriesFromNodeNullTest(MBJSONTest):
 
 
 class DatesCountriesFromNodeTest(MBJSONTest):
-
     filename = 'country.json'
 
     def test_dates_countries_from_node(self):
@@ -857,7 +896,6 @@ class DatesCountriesFromNodeTest(MBJSONTest):
 
 
 class DatesCountriesFromNodeNullTest(MBJSONTest):
-
     filename = 'country_null.json'
 
     def test_dates_countries_from_node(self):
@@ -867,7 +905,6 @@ class DatesCountriesFromNodeNullTest(MBJSONTest):
 
 
 class LabelInfoTest(MBJSONTest):
-
     filename = 'label_info.json'
 
     def _label_info(self, n):
@@ -887,7 +924,6 @@ class LabelInfoTest(MBJSONTest):
 
 
 class NullLabelInfoTest(MBJSONTest):
-
     filename = 'label_info_null.json'
 
     def test_label_info_from_node_0(self):
@@ -905,7 +941,6 @@ class GetScoreTest(PicardTestCase):
 
 
 class ParseAttributeTest(PicardTestCase):
-
     def test_1(self):
         attrs, reltype, attr_credits = ('guest', 'keyboard'), 'instrument', {'keyboard': 'keyboards'}
         result = _parse_attributes(attrs, reltype, attr_credits)
@@ -919,7 +954,11 @@ class ParseAttributeTest(PicardTestCase):
         self.assertEqual(expected, result)
 
     def test_3(self):
-        attrs, reltype, attr_credits = ('guitar', 'keyboard'), 'instrument', {'keyboard': 'keyboards', 'guitar': 'weird guitar'}
+        attrs, reltype, attr_credits = (
+            ('guitar', 'keyboard'),
+            'instrument',
+            {'keyboard': 'keyboards', 'guitar': 'weird guitar'},
+        )
         result = _parse_attributes(attrs, reltype, attr_credits)
         expected = 'weird guitar and keyboards'
         self.assertEqual(expected, result)
@@ -932,7 +971,7 @@ class RelationsToMetadataTargetTypeUrlTest(PicardTestCase):
             'type': 'amazon asin',
             'url': {
                 'resource': 'http://www.amazon.com/dp/020530902x',
-            }
+            },
         }
         _relations_to_metadata_target_type_url(relation, m, None)
         self.assertEqual('', m['asin'])
@@ -943,7 +982,7 @@ class RelationsToMetadataTargetTypeUrlTest(PicardTestCase):
             'type': 'amazon asin',
             'url': {
                 'resource': 'http://www.amazon.com/dp/020530902X',
-            }
+            },
         }
         _relations_to_metadata_target_type_url(relation, m, None)
         self.assertEqual('ASIN', m['asin'])
@@ -954,7 +993,7 @@ class RelationsToMetadataTargetTypeUrlTest(PicardTestCase):
             'type': 'amazon asin',
             'url': {
                 'resource': 'http://www.amazon.com/dp/020530902X',
-            }
+            },
         }
         _relations_to_metadata_target_type_url(relation, m, None)
         self.assertEqual('020530902X', m['asin'])
@@ -965,7 +1004,7 @@ class RelationsToMetadataTargetTypeUrlTest(PicardTestCase):
             'type': 'license',
             'url': {
                 'resource': 'https://URL.LICENSE',
-            }
+            },
         }
         _relations_to_metadata_target_type_url(relation, m, None)
         self.assertEqual('https://URL.LICENSE', m['license'])

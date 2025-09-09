@@ -2,8 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2021-2022 Laurent Monin
 # Copyright (C) 2021-2023, 2025 Philipp Wolfer
+# Copyright (C) 2021-2024 Laurent Monin
 # Copyright (C) 2022 Bob Swift
 # Copyright (C) 2022 jesus2099
 #
@@ -26,9 +26,11 @@ from html import escape
 from operator import attrgetter
 from secrets import token_bytes
 
-from PyQt5.QtCore import QCoreApplication
+from PyQt6.QtCore import QCoreApplication
 
 from picard import log
+from picard.const import BROWSER_INTEGRATION_LOCALHOST
+from picard.i18n import gettext as _
 from picard.util import format_time
 from picard.util.mbserver import build_submission_url
 from picard.util.webbrowser2 import open
@@ -108,24 +110,21 @@ def serve_form(token):
                 return _get_file_as_recording_form(file, tport)
         else:
             raise InvalidTokenError
-    except jwt.exceptions.InvalidTokenError:
-        raise InvalidTokenError
+    except jwt.exceptions.InvalidTokenError as e:
+        raise InvalidTokenError from e
 
 
-def extract_discnumber(metadata):
-    try:
-        discnumber = metadata.get('discnumber', '1').split('/')[0]
-        return int(discnumber)
-    except ValueError:
-        return 1
-
-
-def _open_url_with_token(payload):
+def _generate_token(payload):
     token = jwt.encode(payload, __key, algorithm=__algorithm)
     if isinstance(token, bytes):  # For compatibility with PyJWT 1.x
         token = token.decode()
+    return token
+
+
+def _open_url_with_token(payload):
+    token = _generate_token(payload)
     browser_integration = QCoreApplication.instance().browser_integration
-    url = f'http://127.0.0.1:{browser_integration.port}/add?token={token}'
+    url = f'http://{BROWSER_INTEGRATION_LOCALHOST}:{browser_integration.port}/add?token={token}'
     open(url)
 
 
@@ -146,7 +145,7 @@ def _get_cluster_form(cluster, tport):
         '/release/add',
         _("Add cluster as release…"),
         _get_cluster_data(cluster),
-        {'tport': tport}
+        {'tport': tport},
     )
 
 
@@ -156,7 +155,7 @@ def _get_file_as_release_form(file, tport):
         '/release/add',
         _("Add file as release…"),
         _get_file_as_release_data(file),
-        {'tport': tport}
+        {'tport': tport},
     )
 
 
@@ -166,7 +165,7 @@ def _get_file_as_recording_form(file, tport):
         '/recording/create',
         _("Add file as recording…"),
         _get_file_as_recording_data(file),
-        {'tport': tport}
+        {'tport': tport},
     )
 
 
@@ -216,7 +215,7 @@ def _add_track_data(data, files):
     last_discnumber = None
     for f in sorted(files, key=attrgetter('discnumber', 'tracknumber')):
         m = f.metadata
-        discnumber = extract_discnumber(m)
+        discnumber = f.discnumber
         if last_discnumber is not None and discnumber != last_discnumber:
             disc_counter += 1
             track_counter = 0
@@ -252,7 +251,4 @@ def _get_form(title, action, label, form_data, query_args=None):
 
 
 def _format_form_data(data):
-    return ''.join(
-        _form_input_template.format(name=escape(name), value=escape(value))
-        for name, value in data.items()
-    )
+    return ''.join(_form_input_template.format(name=escape(name), value=escape(value)) for name, value in data.items())

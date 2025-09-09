@@ -2,8 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2019-2020 Philipp Wolfer
-# Copyright (C) 2020-2021 Laurent Monin
+# Copyright (C) 2019-2020, 2022 Philipp Wolfer
+# Copyright (C) 2020-2021, 2024 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -20,11 +20,11 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 
-from picard.util.tags import TAG_NAMES
+from picard.tags import tag_names
 
-from picard.ui.ui_widget_taglisteditor import Ui_TagListEditor
+from picard.ui.forms.ui_widget_taglisteditor import Ui_TagListEditor
 from picard.ui.widgets.editablelistview import (
     AutocompleteItemDelegate,
     EditableListModel,
@@ -32,8 +32,8 @@ from picard.ui.widgets.editablelistview import (
 
 
 class TagListEditor(QtWidgets.QWidget):
-    def __init__(self, parent):
-        super().__init__(parent)
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
         self.ui = Ui_TagListEditor()
         self.ui.setupUi(self)
         list_view = self.ui.tag_list_view
@@ -41,8 +41,7 @@ class TagListEditor(QtWidgets.QWidget):
         model.user_sortable_changed.connect(self.on_user_sortable_changed)
         self.ui.sort_buttons.setVisible(model.user_sortable)
         list_view.setModel(model)
-        list_view.setItemDelegate(AutocompleteItemDelegate(
-            sorted(TAG_NAMES.keys())))
+        list_view.setItemDelegate(AutocompleteItemDelegate(sorted(tag_names())))
 
         selection = list_view.selectionModel()
         selection.selectionChanged.connect(self.on_selection_changed)

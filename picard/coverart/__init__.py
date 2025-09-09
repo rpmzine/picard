@@ -4,11 +4,12 @@
 #
 # Copyright (C) 2007 Oliver Charles
 # Copyright (C) 2007, 2010-2011 Lukáš Lalinský
-# Copyright (C) 2007-2011, 2019-2021, 2023 Philipp Wolfer
+# Copyright (C) 2007-2011, 2019-2024 Philipp Wolfer
 # Copyright (C) 2011 Michael Wiencek
 # Copyright (C) 2011-2012 Wieland Hoffmann
-# Copyright (C) 2013-2015, 2018-2021 Laurent Monin
+# Copyright (C) 2013-2015, 2018-2021, 2023-2024 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
+# Copyright (C) 2024 Giorgio Fontanive
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -28,29 +29,32 @@
 from functools import partial
 import traceback
 
-from PyQt5.QtCore import QObject
+from PyQt6 import QtCore
 
 from picard import log
 from picard.config import get_config
-from picard.coverart.image import (
-    CoverArtImageIdentificationError,
-    CoverArtImageIOError,
+from picard.coverart.image import CoverArtImageIOError
+from picard.coverart.processing import (
+    CoverArtImageProcessing,
+    run_image_filters,
 )
 from picard.coverart.providers import (
     CoverArtProvider,
     cover_art_providers,
 )
-from picard.metadata import register_album_metadata_processor
+from picard.extension_points.metadata import register_album_metadata_processor
+from picard.i18n import N_
+from picard.util import imageinfo
 
 
 class CoverArt:
-
     def __init__(self, album, metadata, release):
         self._queue_new()
         self.album = album
         self.metadata = metadata
         self.release = release  # not used in this class, but used by providers
         self.front_image_found = False
+        self.image_processing = CoverArtImageProcessing(album)
 
     def __repr__(self):
         return "%s for %r" % (self.__class__.__name__, self.album)
@@ -64,29 +68,20 @@ class CoverArt:
         else:
             log.debug("Cover art disabled by user options.")
 
-    def _set_metadata(self, coverartimage, data):
-        try:
-            coverartimage.set_data(data)
-            if coverartimage.can_be_saved_to_metadata:
-                log.debug("Storing to metadata: %r [%s]",
-                    coverartimage, coverartimage.imageinfo_as_string())
-                self.metadata.images.append(coverartimage)
-                for track in self.album._new_tracks:
-                    track.metadata.images.append(coverartimage)
-                # If the image already was a front image,
-                # there might still be some other non-CAA front
-                # images in the queue - ignore them.
-                if not self.front_image_found:
-                    self.front_image_found = coverartimage.is_front_image()
-            else:
-                log.debug("Not storing to metadata: %r [%s]",
-                    coverartimage, coverartimage.imageinfo_as_string())
-        except CoverArtImageIOError as e:
-            self.album.error_append(e)
-            self.album._finalize_loading(error=True)
-            raise e
-        except CoverArtImageIdentificationError as e:
-            self.album.error_append(e)
+    def _set_metadata(self, coverartimage, data, image_info):
+        self.image_processing.run_image_processors(coverartimage, data, image_info)
+        if coverartimage.can_be_saved_to_metadata:
+            log.debug("Storing to metadata: %r", coverartimage)
+            self.metadata.images.append(coverartimage)
+            for track in self.album._new_tracks:
+                track.metadata.images.append(coverartimage)
+            # If the image already was a front image,
+            # there might still be some other non-CAA front
+            # images in the queue - ignore them.
+            if not self.front_image_found:
+                self.front_image_found = coverartimage.is_front_image()
+        else:
+            log.debug("Not storing to metadata: %r", coverartimage)
 
     def _coverart_downloaded(self, coverartimage, data, http, error):
         """Handle finished download, save it to metadata"""
@@ -104,32 +99,39 @@ class CoverArt:
                     'albumid': self.album.id,
                     'host': coverartimage.url.host(),
                 },
-                echo=None
+                echo=None,
             )
             try:
-                self._set_metadata(coverartimage, data)
-            except CoverArtImageIOError:
-                # It doesn't make sense to store/download more images if we can't
-                # save them in the temporary folder, abort.
+                image_info = imageinfo.identify(data)
+                filters_result = True
+                if coverartimage.can_be_filtered:
+                    filters_result = run_image_filters(data, image_info, self.album, coverartimage)
+                if filters_result:
+                    self._set_metadata(coverartimage, data, image_info)
+            except imageinfo.IdentificationError as e:
+                log.warning("Couldn't identify image %r: %s", coverartimage, e)
                 return
 
         self.next_in_queue()
 
     def next_in_queue(self):
         """Downloads next item in queue.
-           If there are none left, loading of album will be finalized.
+        If there are none left, loading of album will be finalized.
         """
         if self.album.id not in self.album.tagger.albums:
             # album removed
             return
 
         config = get_config()
-        if (self.front_image_found
+        if (
+            self.front_image_found
             and config.setting['save_images_to_tags']
             and not config.setting['save_images_to_files']
-            and config.setting['embed_only_one_front_image']):
+            and config.setting['embed_only_one_front_image']
+        ):
             # no need to continue
-            self.album._finalize_loading(None)
+            processing_result = self.image_processing.wait_for_processing()
+            self.album._finalize_loading(error=processing_result)
             return
 
         if self._queue_empty():
@@ -153,7 +155,8 @@ class CoverArt:
                 return
             except StopIteration:
                 # nothing more to do
-                self.album._finalize_loading(None)
+                processing_result = self.image_processing.wait_for_processing()
+                self.album._finalize_loading(error=processing_result)
                 return
 
         # We still have some items to try!
@@ -161,8 +164,7 @@ class CoverArt:
         if not coverartimage.support_types and self.front_image_found:
             # we already have one front image, no need to try other type-less
             # sources
-            log.debug("Skipping %r, one front image is already available",
-                      coverartimage)
+            log.debug("Skipping %r, one front image is already available", coverartimage)
             self.next_in_queue()
             return
 
@@ -171,7 +173,11 @@ class CoverArt:
             try:
                 path = coverartimage.url.toLocalFile()
                 with open(path, 'rb') as file:
-                    self._set_metadata(coverartimage, file.read())
+                    data = file.read()
+                    image_info = imageinfo.identify(data)
+                    self._set_metadata(coverartimage, data, image_info)
+            except imageinfo.IdentificationError as e:
+                log.error("Couldn't identify image file %r: %s", path, e)
             except OSError as exc:
                 (errnum, errmsg) = exc.args
                 log.error("Failed to read %r: %s (%d)", path, errmsg, errnum)
@@ -190,7 +196,7 @@ class CoverArt:
                 'albumid': self.album.id,
                 'host': coverartimage.url.host(),
             },
-            echo=None
+            echo=None,
         )
         log.debug("Downloading %r", coverartimage)
         self.album.tagger.webservice.download_url(
@@ -219,12 +225,13 @@ class CoverArt:
 
     def _message(self, *args, **kwargs):
         """Display message to status bar"""
-        QObject.tagger.window.set_statusbar_message(*args, **kwargs)
+        tagger = QtCore.QCoreApplication.instance()
+        tagger.window.set_statusbar_message(*args, **kwargs)
 
 
 def _retrieve_coverart(album, metadata, release):
     """Gets all cover art URLs from the metadata and then attempts to
-    download the album art. """
+    download the album art."""
 
     coverart = CoverArt(album, metadata, release)
     log.debug("New %r", coverart)

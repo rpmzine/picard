@@ -13,7 +13,7 @@
 # Copyright (C) 2013-2014 Sophist-UK
 # Copyright (C) 2014 Johannes Dewender
 # Copyright (C) 2014 Shadab Zafar
-# Copyright (C) 2014-2015, 2018-2021 Laurent Monin
+# Copyright (C) 2014-2015, 2018-2021, 2023-2024 Laurent Monin
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2017 Frederik “Freso” S. Olesen
 # Copyright (C) 2018 Vishal Choudhary
@@ -33,13 +33,16 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
-
 from collections import defaultdict
 import os.path
 
 from picard import log
-from picard.config import get_config
 from picard.const import USER_PLUGIN_DIR
+from picard.extension_points import (
+    PLUGIN_MODULE_PREFIX,
+    PLUGIN_MODULE_PREFIX_LEN,
+    ExtensionPoint,
+)
 from picard.version import (
     Version,
     VersionError,
@@ -49,73 +52,20 @@ from picard.version import (
 try:
     from markdown import markdown
 except ImportError:
+
     def markdown(text):
         # Simple fallback, just make sure line breaks are applied
         if not text:
             return ''
         return text.strip().replace('\n', '<br>\n')
 
-_PLUGIN_MODULE_PREFIX = "picard.plugins."
-_PLUGIN_MODULE_PREFIX_LEN = len(_PLUGIN_MODULE_PREFIX)
 
-_extension_points = []
-
-
-def _unregister_module_extensions(module):
-    for ep in _extension_points:
-        ep.unregister_module(module)
-
-
-class ExtensionPoint(object):
-
-    def __init__(self, label=None):
-        if label is None:
-            import uuid
-            label = uuid.uuid4()
-        self.label = label
-        self.__dict = defaultdict(list)
-        _extension_points.append(self)
-
-    def register(self, module, item):
-        if module.startswith(_PLUGIN_MODULE_PREFIX):
-            name = module[_PLUGIN_MODULE_PREFIX_LEN:]
-            log.debug("ExtensionPoint: %s register <- plugin=%r item=%r", self.label, name, item)
-        else:
-            name = None
-            # uncomment to debug internal extensions loaded at startup
-            # print("ExtensionPoint: %s register <- item=%r" % (self.label, item))
-        self.__dict[name].append(item)
-
-    def unregister_module(self, name):
-        try:
-            del self.__dict[name]
-        except KeyError:
-            # NOTE: needed due to defaultdict behaviour:
-            # >>> d = defaultdict(list)
-            # >>> del d['a']
-            # KeyError: 'a'
-            # >>> d['a']
-            # []
-            # >>> del d['a']
-            # >>> #^^ no exception, after first read
-            pass
-
-    def __iter__(self):
-        config = get_config()
-        enabled_plugins = config.setting['enabled_plugins'] if config else []
-        for name in self.__dict:
-            if name is None or name in enabled_plugins:
-                yield from self.__dict[name]
-
-
-class PluginShared(object):
-
+class PluginShared:
     def __init__(self):
         super().__init__()
 
 
 class PluginWrapper(PluginShared):
-
     def __init__(self, module, plugindir, file=None, manifest_data=None):
         super().__init__()
         self.module = module
@@ -134,8 +84,8 @@ class PluginWrapper(PluginShared):
     @property
     def module_name(self):
         name = self.module.__name__
-        if name.startswith(_PLUGIN_MODULE_PREFIX):
-            name = name[_PLUGIN_MODULE_PREFIX_LEN:]
+        if name.startswith(PLUGIN_MODULE_PREFIX):
+            name = name[PLUGIN_MODULE_PREFIX_LEN:]
         return name
 
     @property
@@ -196,7 +146,7 @@ class PluginWrapper(PluginShared):
 
     @property
     def files_list(self):
-        return self.file[len(self.dir)+1:]
+        return self.file[len(self.dir) + 1 :]
 
     @property
     def is_user_installed(self):
@@ -204,7 +154,6 @@ class PluginWrapper(PluginShared):
 
 
 class PluginData(PluginShared):
-
     """Used to store plugin data from JSON API"""
 
     def __init__(self, d, module_name):
@@ -231,20 +180,7 @@ class PluginData(PluginShared):
         return ", ".join(self.files.keys())
 
 
-class PluginPriority:
-
-    """
-    Define few priority values for plugin functions execution order
-    Those with higher values are executed first
-    Default priority is PluginPriority.NORMAL
-    """
-    HIGH = 100
-    NORMAL = 0
-    LOW = -100
-
-
 class PluginFunctions:
-
     """
     Store ExtensionPoint in a defaultdict with priority as key
     run() method will execute entries with higher priority value first
@@ -253,13 +189,15 @@ class PluginFunctions:
     def __init__(self, label=None):
         self.functions = defaultdict(lambda: ExtensionPoint(label=label))
 
-    def register(self, module, item, priority=PluginPriority.NORMAL):
+    def register(self, module, item, priority=0):
         self.functions[priority].register(module, item)
+
+    def _get_functions(self):
+        """Returns registered functions by order of priority (highest first) and registration"""
+        for _priority, functions in sorted(self.functions.items(), key=lambda i: i[0], reverse=True):
+            yield from functions
 
     def run(self, *args, **kwargs):
         """Execute registered functions with passed parameters honouring priority"""
-        for priority, functions in sorted(self.functions.items(),
-                                          key=lambda i: i[0],
-                                          reverse=True):
-            for function in functions:
-                function(*args, **kwargs)
+        for function in self._get_functions():
+            function(*args, **kwargs)

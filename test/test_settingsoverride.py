@@ -2,7 +2,7 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2019-2021 Laurent Monin
+# Copyright (C) 2019-2022 Laurent Monin
 # Copyright (C) 2020 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
@@ -27,7 +27,6 @@ from picard.util.settingsoverride import SettingsOverride
 
 
 class SettingsOverrideTest(PicardTestCase):
-
     def setUp(self):
         super().setUp()
         self.set_config_values({'key1': 'origval1', 'key2': 'origval2'})

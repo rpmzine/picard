@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2020-2022 Philipp Wolfer
-# Copyright (C) 2021 Laurent Monin
+# Copyright (C) 2021-2022 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -29,21 +29,47 @@ from unittest.mock import (
 from test.picardtestcase import PicardTestCase
 
 import picard.disc
+from picard.util.mbserver import ServerTuple
 
 
 test_toc = [1, 11, 242457, 150, 44942, 61305, 72755, 96360, 130485, 147315, 164275, 190702, 205412, 220437]
 
 
 class MockDisc:
-
     id = 'lSOVc5h6IXSuzcamJS1Gp4_tRuA-'
     mcn = '5029343070452'
     tracks = list(range(0, 11))
     toc_string = ' '.join(str(i) for i in test_toc)
-    submission_url = 'https://musicbrainz.org/cdtoc/attach?id=lSOVc5h6IXSuzcamJS1Gp4_tRuA-&tracks=11&toc=1+11+242457+150+44942+61305+72755+96360+130485+147315+164275+190702+205412+220437'
+
+
+def mock_disc_submission_url():
+    return picard.disc.Disc._submission_url(MockDisc.id, len(MockDisc.tracks), MockDisc.toc_string)
 
 
 class DiscTest(PicardTestCase):
+    def test_static_submission_url_no_config(self):
+        with patch.object(
+            picard.util.mbserver, 'get_submission_server', return_value=ServerTuple('example.com', 443)
+        ) as mocked:
+            self.assertEqual(
+                picard.disc.Disc._submission_url('A', 2, 'B C'),
+                'https://example.com/cdtoc/attach?id=A&tracks=2&toc=B+C',
+            )
+            mocked.assert_called_once()
+
+    def test_static_submission_url(self):
+        self.set_config_values(
+            setting={
+                'server_host': 'test.musicbrainz.org',
+                'server_port': 80,
+                'use_server_for_submission': True,
+            }
+        )
+        self.assertEqual(
+            picard.disc.Disc._submission_url('A', 2, 'B C'),
+            'http://test.musicbrainz.org/cdtoc/attach?id=A&tracks=2&toc=B+C',
+        )
+
     @unittest.skipUnless(picard.disc.discid, "discid not available")
     def test_raise_disc_error(self):
         disc = picard.disc.Disc()
@@ -59,11 +85,13 @@ class DiscTest(PicardTestCase):
 
     @patch.object(picard.disc, 'discid')
     def test_read(self, mock_discid):
-        self.set_config_values(setting={
-            'server_host': 'musicbrainz.org',
-            'server_port': 443,
-            'use_server_for_submission': False,
-        })
+        self.set_config_values(
+            setting={
+                'server_host': 'musicbrainz.org',
+                'server_port': 443,
+                'use_server_for_submission': False,
+            }
+        )
         mock_discid.read = Mock(return_value=MockDisc())
         device = '/dev/cdrom1'
         disc = picard.disc.Disc()
@@ -76,9 +104,9 @@ class DiscTest(PicardTestCase):
         mock_discid.read.assert_called_with(device, features=['mcn'])
         self.assertEqual(MockDisc.id, disc.id)
         self.assertEqual(MockDisc.mcn, disc.mcn)
-        self.assertEqual(11, disc.tracks)
+        self.assertEqual(len(MockDisc.tracks), disc.tracks)
         self.assertEqual(MockDisc.toc_string, disc.toc_string)
-        self.assertEqual(MockDisc.submission_url, disc.submission_url)
+        self.assertEqual(mock_disc_submission_url(), disc.submission_url)
 
     @patch.object(picard.disc, 'discid')
     def test_put(self, mock_discid):
@@ -104,15 +132,14 @@ class DiscTest(PicardTestCase):
 
     @patch.object(picard.disc, 'discid')
     def test_submission_url(self, mock_discid):
-        self.set_config_values(setting={
-            'server_host': 'test.musicbrainz.org',
-            'server_port': 80,
-            'use_server_for_submission': True,
-        })
+        self.set_config_values(
+            setting={
+                'server_host': 'test.musicbrainz.org',
+                'server_port': 80,
+                'use_server_for_submission': True,
+            }
+        )
         mock_discid.read = Mock(return_value=MockDisc())
         disc = picard.disc.Disc()
         disc.read()
-        self.assertEqual(
-            'http://test.musicbrainz.org/cdtoc/attach?id=lSOVc5h6IXSuzcamJS1Gp4_tRuA-&tracks=11&toc=1+11+242457+150+44942+61305+72755+96360+130485+147315+164275+190702+205412+220437',
-            disc.submission_url
-        )
+        self.assertEqual(mock_disc_submission_url(), disc.submission_url)

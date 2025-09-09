@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2018 Wieland Hoffmann
-# Copyright (C) 2019-2023 Philipp Wolfer
-# Copyright (C) 2020-2021 Laurent Monin
+# Copyright (C) 2019-2024 Philipp Wolfer
+# Copyright (C) 2020-2024 Laurent Monin
 # Copyright (C) 2021 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
@@ -32,9 +32,12 @@ from tempfile import (
     mkstemp,
 )
 import unittest
-from unittest.mock import Mock
+from unittest.mock import (
+    MagicMock,
+    Mock,
+)
 
-from PyQt5 import QtCore
+from PyQt6 import QtCore
 
 from picard import (
     config,
@@ -45,25 +48,23 @@ from picard.releasegroup import ReleaseGroup
 
 
 class FakeThreadPool(QtCore.QObject):
-
     def start(self, runnable, priority):
         runnable.run()
 
 
 class FakeTagger(QtCore.QObject):
-
     tagger_stats_changed = QtCore.pyqtSignal()
 
     def __init__(self):
-        QtCore.QObject.__init__(self)
-        QtCore.QObject.config = config
-        QtCore.QObject.log = log
+        super().__init__()
         self.tagger_stats_changed.connect(self.emit)
         self.exit_cleanup = []
         self.files = {}
         self.stopping = False
         self.thread_pool = FakeThreadPool()
         self.priority_thread_pool = FakeThreadPool()
+        self.window = MagicMock()
+        self.webservice = MagicMock()
 
     def register_cleanup(self, func):
         self.exit_cleanup.append(func)
@@ -81,10 +82,10 @@ class FakeTagger(QtCore.QObject):
 
 class PicardTestCase(unittest.TestCase):
     def setUp(self):
-        log.set_level(logging.DEBUG)
+        super().setUp()
+        log.set_verbosity(logging.DEBUG)
         setup_gettext(None, 'C')
         self.tagger = FakeTagger()
-        QtCore.QObject.tagger = self.tagger
         QtCore.QCoreApplication.instance = lambda: self.tagger
         self.addCleanup(self.tagger.run_cleanup)
         self.init_config()
@@ -137,7 +138,7 @@ def get_test_data_path(*paths):
 
 def create_fake_png(extra):
     """Creates fake PNG data that satisfies Picard's internal image type detection"""
-    return b'\x89PNG\x0D\x0A\x1A\x0A' + (b'a' * 4) + b'IHDR' + struct.pack('>LL', 100, 100) + extra
+    return b'\x89PNG\x0d\x0a\x1a\x0a' + (b'a' * 4) + b'IHDR' + struct.pack('>LL', 100, 100) + extra
 
 
 def load_test_json(filename):

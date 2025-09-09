@@ -27,18 +27,12 @@
 
 
 from mutagen.id3 import (
+    GRP1,
     ID3,
     Frames,
     Frames_2_2,
     TextFrame,
 )
-
-
-try:
-    from mutagen.id3 import GRP1
-except ImportError:
-    class GRP1(TextFrame):
-        pass
 
 
 class XSOP(TextFrame):
@@ -47,12 +41,11 @@ class XSOP(TextFrame):
 
 known_frames = dict(Frames)
 known_frames.update(dict(Frames_2_2))
-known_frames["GRP1"] = GRP1  # Available since mutagen >= 1.38
+known_frames["GRP1"] = GRP1
 known_frames["XSOP"] = XSOP
 
 
 class CompatID3(ID3):
-
     """
     Additional features over mutagen.id3.ID3:
      * Allow some v2.4 frames also in v2.3

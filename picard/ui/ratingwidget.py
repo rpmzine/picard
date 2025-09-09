@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2008, 2018-2022 Philipp Wolfer
 # Copyright (C) 2011, 2013 Michael Wiencek
-# Copyright (C) 2013, 2018, 2020-2022 Laurent Monin
+# Copyright (C) 2013, 2018, 2020-2024 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2018 Vishal Choudhary
 #
@@ -23,7 +23,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from PyQt5 import (
+from PyQt6 import (
     QtCore,
     QtGui,
     QtWidgets,
@@ -31,12 +31,12 @@ from PyQt5 import (
 
 from picard import log
 from picard.config import get_config
+from picard.i18n import N_
 
 
 class RatingWidget(QtWidgets.QWidget):
-
-    def __init__(self, parent, track):
-        super().__init__(parent)
+    def __init__(self, track, parent=None):
+        super().__init__(parent=parent)
         self._track = track
         config = get_config()
         self._maximum = config.setting['rating_steps'] - 1
@@ -54,7 +54,9 @@ class RatingWidget(QtWidgets.QWidget):
         self._height = self._star_size + 6
         self.setMaximumSize(self._width, self._height)
         self.setMinimumSize(self._width, self._height)
-        self.setSizePolicy(QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed))
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        )
         self.setMouseTracking(True)
 
     def sizeHint(self):
@@ -68,7 +70,7 @@ class RatingWidget(QtWidgets.QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
-            x = event.x()
+            x = event.pos().x()
             if x < self._offset:
                 return
             rating = self._getRatingFromPosition(x)
@@ -80,7 +82,7 @@ class RatingWidget(QtWidgets.QWidget):
             event.accept()
 
     def mouseMoveEvent(self, event):
-        self._setHighlight(self._getRatingFromPosition(event.x()))
+        self._setHighlight(self._getRatingFromPosition(event.pos().x()))
         event.accept()
 
     def leaveEvent(self, event):
